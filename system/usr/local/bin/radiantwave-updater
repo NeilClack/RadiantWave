@@ -1,0 +1,80 @@
+#!/bin/bash
+set -euo pipefail
+
+SCRIPT=$(basename "$0")
+
+log() {
+  echo "$*"
+  logger -t "$SCRIPT" "$*"
+}
+
+# Build-time tokens
+CHANNEL="__CHANNEL__"         # release|beta|dev
+SYSTEM_TYPE="__SYSTEM_TYPE__" # home|commercial
+
+REPO_BASE="https://repository.radiantwavetech.com/basic"
+BASE_URL="${REPO_BASE}/${CHANNEL}/${SYSTEM_TYPE}"
+
+cd /tmp
+
+# Download VERSION file
+log "Downloading VERSION file from ${BASE_URL}/VERSION"
+curl -fsSLO --retry 3 --retry-connrefused "${BASE_URL}/VERSION"
+
+# Read versions (handle missing local file gracefully)
+VERSION="$(cat VERSION)"
+if [[ -f /usr/local/share/radiantwave/VERSION ]]; then
+  CURRENT_VERSION="$(cat /usr/local/share/radiantwave/VERSION)"
+else
+  CURRENT_VERSION=""
+fi
+
+log "Current VERSION: ${CURRENT_VERSION:-<none>}"
+log "Upstream VERSION: ${VERSION}"
+
+# Only update when upstream differs from current
+if [[ "$VERSION" != "${CURRENT_VERSION}" ]]; then
+  BASE="radiantwave-${SYSTEM_TYPE}-${VERSION}.tar.xz"
+  SUM="${BASE}.sha256"
+
+  # Download checksum + tarball
+  log "Downloading checksum ${SUM}"
+  curl -fsSLO --retry 3 --retry-connrefused "${BASE_URL}/${SUM}"
+
+  log "Downloading assets ${BASE}"
+  curl -fsSLO --retry 3 --retry-connrefused "${BASE_URL}/${BASE}"
+
+  # Verify integrity
+  log "Verifying assets"
+  if sha256sum -c "$SUM"; then
+    log "Assets verified, installing..."
+
+    # Unpack into root (overwrite existing files)
+    log "Unpacking tarball to /"
+    tar --no-same-owner -xJf "$BASE" -C /
+
+    # Clean up
+    log "Deleting downloads"
+    rm -f "$BASE" "$SUM" VERSION
+
+    log "Updater: Radiantwave ${SYSTEM_TYPE} ${VERSION} installed successfully (channel=${CHANNEL})"
+
+    log "Running setup scripts"
+    SCRIPT_DIR="/usr/local/bin/radiantwave/scripts"
+
+    for script in "$SCRIPT_DIR"/*.sh; do
+      # Make sure it’s a regular file and executable
+      if [[ -f "$script" ]]; then
+        log "Running $script..."
+        bash "$script"
+      fi
+    done
+
+  else
+    log "Checksum FAILED for ${BASE}. Skipping update."
+    exit 1
+  fi
+else
+  log "No new version available, skipping update."
+  exit 0
+fi
