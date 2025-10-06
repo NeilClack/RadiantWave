@@ -16,7 +16,7 @@ BASE_URL="${REPO_BASE}/${CHANNEL}/${SYSTEM_TYPE}"
 # --- State paths ---
 STATE_DIR="/usr/local/share/radiantwave"
 LOCAL_VERSION_FILE="${STATE_DIR}/VERSION"
-POST_INSTALL_DIR="/usr/local/bin/radiantwave/scripts"
+POST_INSTALL_DIR="/usr/local/bin/scripts"
 
 mkdir -p "$STATE_DIR"
 
