@@ -113,7 +113,10 @@ log "Installation complete (version ${UPSTREAM_VERSION}, channel ${CHANNEL})."
 # --- 7) Run post-install scripts if present ---
 if [[ -d "$POST_INSTALL_DIR" ]]; then
   shopt -s nullglob
-  for script in "$POST_INSTALL_DIR"/*.sh; do
+  # Run scripts in lexicographical order (e.g., 10-foo.sh, 20-bar.sh)
+  scripts=("$POST_INSTALL_DIR"/*.sh)
+  IFS=$'\n' sorted_scripts=($(printf '%s\n' "${scripts[@]}" | sort))
+  for script in "${sorted_scripts[@]}"; do
     [[ -f "$script" ]] || continue
     log "Running post-install: $script"
     bash "$script"
