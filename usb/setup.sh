@@ -136,6 +136,33 @@ run_step "Install Hyprland config for localuser" bash -c '
   fi
 '
 
+# --- NEW: Run post-install hooks (from extracted payload) ---
+run_step "Run post-install hooks" bash -c '
+  set -euo pipefail
+  POST_INSTALL_DIR="/usr/local/share/radiantwave/post_install"
+  export SYSTEM_TYPE="'"$SYSTEM_TYPE"'"
+  export CHANNEL="'"$CHANNEL"'"
+  export VERSION="'"$VERSION"'"
+
+  if [[ -d "$POST_INSTALL_DIR" ]]; then
+    shopt -s nullglob
+    # sort -V respects numeric prefixes like 10-foo.sh, 20-bar.sh
+    mapfile -t scripts < <(printf "%s\n" "$POST_INSTALL_DIR"/*.sh | sort -V)
+    if (( ${#scripts[@]} == 0 )); then
+      echo "[INFO] No post-install scripts found in $POST_INSTALL_DIR"
+    else
+      for script in "${scripts[@]}"; do
+        [[ -f "$script" ]] || continue
+        echo "[INFO] Running post-install: $script"
+        bash "$script" || echo "[WARN] Post-install script failed: $script"
+      done
+    fi
+    shopt -u nullglob
+  else
+    echo "[INFO] No post-install directory at ${POST_INSTALL_DIR}; skipping."
+  fi
+'
+
 # --- Autologin via SDDM ---
 run_step "Fix stray/duplicate Hyprland session file" bash -c '
   set -e
