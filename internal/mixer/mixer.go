@@ -178,6 +178,13 @@ func SetVolume128(v int) {
 		v = mix.MAX_VOLUME
 	}
 	currentVolume = v
+	// Store the currentVolume in the config
+	config.Get().LastVolume = currentVolume
+	// Save config changes
+	if err := config.Get().Save(); err != nil {
+		logger.LogErrorF("saving volume to config: %v", err)
+	}
+	// Apply immediately if possible
 	if inited && deviceOpen {
 		mix.VolumeMusic(currentVolume)
 	}
@@ -275,6 +282,12 @@ func SwitchDevice(newName string) error {
 	}
 
 	return nil
+}
+
+func GetVolume128() int {
+	mu.Lock()
+	defer mu.Unlock()
+	return currentVolume
 }
 
 // Shutdown fully tears everything down. Call at app exit.
