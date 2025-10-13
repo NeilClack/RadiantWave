@@ -176,6 +176,8 @@ func (c *Config) Load() error {
 		}
 	}
 
+	c.Save() // Best-effort save to ensure any in-memory changes are persisted
+
 	log.Printf("Configuration loaded successfully from %s", configDir)
 	return nil
 }
