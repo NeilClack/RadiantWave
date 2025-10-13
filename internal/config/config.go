@@ -64,7 +64,7 @@ func Get() *Config {
 func (c *Config) Load() error {
 	log.Println("Loading application configuration...")
 
-	// 1) Paths
+	// 1) Resolve paths
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return fmt.Errorf("config: could not determine user home directory: %w", err)
@@ -72,14 +72,15 @@ func (c *Config) Load() error {
 	configDir := filepath.Join(homeDir, ".radiantwave")
 	configFilePath := filepath.Join(configDir, "settings.json")
 
+	// Runtime-only paths
 	c.LogDir = filepath.Join(homeDir, ".radiantwave")
 
-	// 2) Ensure config dir
+	// 2) Ensure config dir exists
 	if err := os.MkdirAll(configDir, 0o755); err != nil {
 		return fmt.Errorf("config: could not create config directory %s: %w", configDir, err)
 	}
 
-	// 3) Read file (may not exist)
+	// 3) Try to read existing settings (may not exist on first run)
 	data, readErr := os.ReadFile(configFilePath)
 	fileMissing := false
 	if readErr != nil {
@@ -90,24 +91,18 @@ func (c *Config) Load() error {
 		log.Println("settings.json not found, will create with defaults.")
 	}
 
-	// 4) If we have JSON, unmarshal and also probe for field existence
-	hasLastVolume := false
+	// 4) If we have JSON, probe for key existence and unmarshal into c exactly once
+	raw := map[string]json.RawMessage{}
 	if len(data) > 0 {
-		// Probe keys without forcing defaults
-		var raw map[string]json.RawMessage
 		if err := json.Unmarshal(data, &raw); err != nil {
 			return fmt.Errorf("config: could not parse json (raw probe): %w", err)
 		}
-		// IMPORTANT: this key must match your struct tag (see note below).
-		_, hasLastVolume = raw["last_volume"]
-
-		// Now unmarshal into the struct
 		if err := json.Unmarshal(data, c); err != nil {
 			return fmt.Errorf("config: could not parse json from %s: %w", configFilePath, err)
 		}
 	}
 
-	// 5) Populate runtime fields
+	// 5) Runtime-only fields; keep your existing package logic
 	c.HomeDir = homeDir
 	c.AssetsDir = "/usr/local/share/radiantwave"
 
@@ -117,51 +112,63 @@ func (c *Config) Load() error {
 		c.SystemType = SystemType
 	}
 
-	// 6) Apply first-run defaults
+	// 6) Apply defaults strictly based on "did the key exist?"
+	// Treat first-run (no file) as "all keys missing".
 	defaultsApplied := false
-	if len(c.SelectedFilePaths) == 0 {
-		var defaultFile string
+	missing := func(key string) bool { return fileMissing || raw[key] == nil }
+
+	// selected_file_paths
+	if missing("selected_file_paths") {
+		var def string
 		switch c.SystemType {
 		case "home":
-			defaultFile = filepath.Join(c.AssetsDir, "affirmations", "home", "Relaxation.txt")
+			def = filepath.Join(c.AssetsDir, "affirmations", "home", "Relaxation.txt")
 		case "commercial":
-			defaultFile = filepath.Join(c.AssetsDir, "affirmations", "commercial", "Standard.txt")
+			def = filepath.Join(c.AssetsDir, "affirmations", "commercial", "Standard.txt")
 		default:
-			defaultFile = filepath.Join(c.AssetsDir, "affirmations", "home", "Relaxation.txt")
+			def = filepath.Join(c.AssetsDir, "affirmations", "home", "Relaxation.txt")
 		}
-		c.SelectedFilePaths = []string{defaultFile}
+		c.SelectedFilePaths = []string{def}
 		defaultsApplied = true
 	}
-	if c.SelectedAudioFilePath == "" {
+
+	// selected_audio_paths  (note: tag is plural per your struct)
+	if missing("selected_audio_paths") {
 		c.SelectedAudioFilePath = filepath.Join(c.AssetsDir, "audio", "7.83.wav")
 		defaultsApplied = true
 	}
 
-	// 7) Fonts and visuals
-	if c.ApplicationFont == "" {
+	// application_font
+	if missing("application_font") {
 		c.ApplicationFont = "Roboto-Regular"
 	}
-	if c.BaseFontSize == 0 {
+
+	// font_size (BaseFontSize)
+	if missing("font_size") {
 		c.BaseFontSize = 128
 	}
-	if c.StandardFontSize == 0 {
+
+	// standard_font_size
+	if missing("standard_font_size") {
 		c.StandardFontSize = 32
 	}
-	if c.LinePattern == "" {
+
+	// line_pattern
+	if missing("line_pattern") {
 		c.LinePattern = "fibonacci"
 	}
-	if c.DisplayOrientation == 0 || (c.DisplayOrientation != 1 && c.DisplayOrientation != 2) {
+
+	// display_orientation
+	if missing("display_orientation") {
 		c.DisplayOrientation = 1
 	}
 
-	// 8) LastVolume default ONLY if key was missing (or bad value)
-	// Treat first-run (no file) the same as "missing key".
-	if !hasLastVolume || c.LastVolume < 0 || c.LastVolume > 128 {
-		c.LastVolume = 96                                // 75% of 128
-		defaultsApplied = defaultsApplied || fileMissing // saving makes sense on fresh runs
+	// last_volume  (range validation happens elsewhere; here we only set when absent)
+	if missing("last_volume") {
+		c.LastVolume = 96 // 75% of 128
 	}
 
-	// 9) Save if first run or we applied defaults
+	// 7) Persist when first run or when first-run defaults were applied
 	if fileMissing || defaultsApplied {
 		log.Println("Applying default settings and saving configuration.")
 		if saveErr := c.Save(); saveErr != nil {
