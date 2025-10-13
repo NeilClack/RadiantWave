@@ -13,6 +13,7 @@ import (
 	"radiantwavetech.com/radiant_wave/internal/graphics"
 	"radiantwavetech.com/radiant_wave/internal/keybinds"
 	"radiantwavetech.com/radiant_wave/internal/logger"
+	"radiantwavetech.com/radiant_wave/internal/mixer"
 	"radiantwavetech.com/radiant_wave/internal/network"
 	"radiantwavetech.com/radiant_wave/internal/page"
 	"radiantwavetech.com/radiant_wave/internal/shaderManager"
@@ -122,6 +123,9 @@ func Run() error {
 	if err := app.Validate(); err != nil {
 		return fmt.Errorf("failed to complete application validation: %v", err)
 	}
+
+	// Initialize the Music Mixer
+	mixer.Init(config.Get().AudioDeviceName)
 
 	// Start the main application loop
 	if err := app.runEventLoop(); err != nil {
