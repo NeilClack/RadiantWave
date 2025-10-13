@@ -10,6 +10,8 @@ import (
 
 	"github.com/veandco/go-sdl2/mix"
 	"github.com/veandco/go-sdl2/sdl"
+	"radiantwavetech.com/radiant_wave/internal/config"
+	"radiantwavetech.com/radiant_wave/internal/logger"
 )
 
 var (
@@ -53,7 +55,19 @@ func Init(wantedDevice string) error {
 		return err
 	}
 
-	currentVolume = mix.MAX_VOLUME
+	// Check if the volume is stored in the config; if not, default to max.
+	storedVolume := config.Get().LastVolume
+	if storedVolume < 0 {
+		// Set the default volume to max
+		currentVolume = mix.MAX_VOLUME
+		// Store the currentVolume in the config
+		config.Get().LastVolume = currentVolume
+		// Save config changes
+		if err := config.Get().Save(); err != nil {
+			logger.LogErrorF("saving default volume to config: %v", err)
+		}
+	}
+
 	inited = true
 	return nil
 }

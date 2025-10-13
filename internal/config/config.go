@@ -35,6 +35,7 @@ type Config struct {
 	StandardFontSize      int32    `json:"standard_font_size"` // Used for standard text and represents the visual font size seen by the end-user
 	LinePattern           string   `json:"line_pattern"`
 	DisplayOrientation    int      `json:"display_orientation"` // 1 = standard horizontal 2 = vertical
+	LastVolume            int      `json:"last_volume"`         // 0..128, last volume set by the user
 }
 
 var (
