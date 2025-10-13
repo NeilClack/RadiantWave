@@ -241,6 +241,24 @@ func (app *Application) initKeybinds() {
 			app.Stop()
 		},
 	)
+
+	// Volume Up
+	keybinds.Register(
+		sdl.K_UP,
+		sdl.KMOD_SHIFT,
+		func() {
+			mixer.SetVolume128(mixer.GetVolume128() + 2)
+		},
+	)
+
+	// Volume Down
+	keybinds.Register(
+		sdl.K_DOWN,
+		sdl.KMOD_SHIFT,
+		func() {
+			mixer.SetVolume128(mixer.GetVolume128() - 2)
+		},
+	)
 }
 
 func (app *Application) Stop() {
