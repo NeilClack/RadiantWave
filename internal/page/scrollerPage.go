@@ -6,15 +6,14 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 
 	"github.com/go-gl/gl/v3.3-core/gl"
 	"github.com/veandco/go-sdl2/sdl"
-	"radiantwavetech.com/radiant_wave/internal/audio"
 	"radiantwavetech.com/radiant_wave/internal/colors"
 	"radiantwavetech.com/radiant_wave/internal/config"
 	"radiantwavetech.com/radiant_wave/internal/fontManager"
 	"radiantwavetech.com/radiant_wave/internal/logger"
+	"radiantwavetech.com/radiant_wave/internal/mixer"
 	colorPattern "radiantwavetech.com/radiant_wave/internal/pattern/color"
 	linePattern "radiantwavetech.com/radiant_wave/internal/pattern/line"
 	"radiantwavetech.com/radiant_wave/internal/shaderManager"
@@ -28,7 +27,6 @@ type Line struct {
 type ScrollerPage struct {
 	Base
 
-	audioData     *audio.AudioData
 	words         []string
 	wordIndex     int
 	lines         []Line
@@ -56,13 +54,10 @@ type ScrollerPage struct {
 	velocityState     int     // 0=changing, 1=waiting at ceiling, 2=waiting at floor
 	autoVelocity      bool    // Enable/disable automatic velocity
 	hold              float32 // Hold time at ceiling/floor in seconds
-
-	audioStopChan chan struct{}
-	audioWg       *sync.WaitGroup
-	audioDeviceID sdl.AudioDeviceID
 }
 
 func (p *ScrollerPage) Init(app ApplicationInterface) error {
+	logger.LogInfo("Initializing ScrollerPage")
 	p.increment = 100.0
 	p.velocity = 800.0
 	p.SetAutoVelocity(true, -4000.0, 4000.0, 100.0, 2.5, 6.0)
@@ -165,42 +160,23 @@ func (p *ScrollerPage) Init(app ApplicationInterface) error {
 		}
 	}
 
-	// Try to start audio
-	audioData, err := audio.LoadWAV(cfg.SelectedAudioFilePath)
-	if err != nil {
-		logger.LogWarningF("Audio load failed: %v (continuing without audio)", err)
-		p.audioData = nil
-		return nil // Not fatal
-	}
-	p.audioData = audioData
-
-	// stopChan, wg, deviceID, err := audio.PlayAudioLoop(cfg.AudioDeviceName, audioData)
-	// if err != nil {
-	// 	logger.LogWarningF("Audio playback failed: %v (continuing without audio)", err)
-	// 	p.audioData = nil
-	// 	return nil
-	// }
-	// p.audioStopChan = stopChan
-	// p.audioWg = wg
-	// p.audioDeviceID = deviceID
-	// assumes audio.Init() was called earlier in app startup
-
-	stopChan, wg, deviceID, err := audio.PlayLoop(cfg.AudioDeviceName, audioData)
-	if err != nil {
-		logger.LogWarningF("Audio playback failed: %v (continuing without audio)", err)
-		p.audioData = nil
-		return nil
+	// Start audio playback
+	logger.LogInfo("Starting audio playback")
+	if config.Get().SelectedAudioFilePath == "" {
+		logger.LogWarningF("No audio file selected, skipping audio playback")
+	} else {
+		if err := mixer.Play(config.Get().SelectedAudioFilePath, true); err != nil {
+			logger.LogErrorF("mixer.Play error: %v", err)
+		}
 	}
 
-	chosen := cfg.AudioDeviceName
-	if chosen == "" {
-		chosen = "default"
-	}
-	logger.LogInfoF("Playing audio on device: %q (id=%d)", chosen, deviceID)
-
-	p.audioStopChan = stopChan
-	p.audioWg = wg
-	p.audioDeviceID = deviceID
+	logger.LogInfoF("Playing music on device %q", func() string {
+		d := mixer.CurrentDevice()
+		if d == "" {
+			return "default"
+		}
+		return d
+	}())
 
 	return nil
 }
@@ -420,30 +396,7 @@ func (p *ScrollerPage) Destroy() error {
 		return nil
 	}
 
-	// 1) Stop audio loop first so it stops touching buffers
-	if p.audioStopChan != nil {
-		// close only once
-		close(p.audioStopChan)
-		p.audioStopChan = nil
-	}
-	if p.audioWg != nil {
-		p.audioWg.Wait()
-		p.audioWg = nil
-	}
-
-	// 2) Close audio device and clear queued data
-	if p.audioDeviceID != 0 {
-		sdl.PauseAudioDevice(p.audioDeviceID, true)
-		sdl.ClearQueuedAudio(p.audioDeviceID)
-		sdl.CloseAudioDevice(p.audioDeviceID)
-		p.audioDeviceID = 0
-	}
-
-	// 3) Free WAV/converted buffer (our AudioData.Free() knows whether it’s SDL-owned)
-	if p.audioData != nil {
-		p.audioData.Free()
-		p.audioData = nil
-	}
+	mixer.Stop(1000) // fade 500ms (or 0 for hard stop)
 
 	// 4) GL cleanup — delete any remaining text textures
 	for i := range p.lines {
