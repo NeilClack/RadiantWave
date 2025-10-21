@@ -423,7 +423,21 @@ func (p *ScrollerPage) Destroy() error {
 	return nil
 }
 
-// Add this method to configure the automatic velocity system
+// SetAutoVelocity configures the automatic velocity system for the ScrollerPage.
+//
+// When enabled, the velocity will automatically oscillate between a negative floor
+// and a positive ceiling value, increasing or decreasing by a fixed step at a given delay.
+// The system holds the velocity at each extreme (floor or ceiling) for a specified duration
+// before reversing direction.
+//
+// Parameters:
+//
+//	enabled - Enables (true) or disables (false) the automatic velocity system.
+//	floor   - The minimum velocity in units per second (positive value; internally converted to negative).
+//	ceiling - The maximum velocity in units per second (positive value).
+//	step    - The velocity increment per update in units per second (positive value).
+//	delay   - Time between velocity updates in seconds.
+//	hold    - Duration to hold at floor or ceiling velocity before changing direction, in seconds.
 func (p *ScrollerPage) SetAutoVelocity(enabled bool, floor, ceiling, step, delay, hold float32) {
 	p.autoVelocity = enabled
 	p.velocityFloor = -float32(math.Abs(float64(floor)))    // Ensure floor is negative
