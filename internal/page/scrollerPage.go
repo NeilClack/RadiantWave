@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/go-gl/gl/v3.3-core/gl"
+	"github.com/veandco/go-sdl2/mix"
 	"github.com/veandco/go-sdl2/sdl"
 	"radiantwavetech.com/radiant_wave/internal/colors"
 	"radiantwavetech.com/radiant_wave/internal/config"
@@ -159,6 +160,14 @@ func (p *ScrollerPage) Init(app ApplicationInterface) error {
 			p.lines[i].words[j].Y = int32(p.scrollY) - int32(p.lineHeight)*int32(i)
 		}
 	}
+
+	configVolume := config.Get().LastVolume
+	mixerMaxVolume := mix.MAX_VOLUME
+	mixerVolume := mixer.GetVolume128()
+
+	logger.LogInfoF("configVolume: %d", configVolume)
+	logger.LogInfoF("mixerMaxVolume: %d", mixerMaxVolume)
+	logger.LogInfoF("mixerVolume: %d", mixerVolume)
 
 	// Switch audio devices
 	if mixer.CurrentDevice() != config.Get().AudioDeviceName {

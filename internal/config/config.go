@@ -165,7 +165,7 @@ func (c *Config) Load() error {
 
 	// last_volume  (range validation happens elsewhere; here we only set when absent)
 	if missing("last_volume") {
-		c.LastVolume = 96 // 75% of 128
+		c.LastVolume = 128
 	}
 
 	// 7) Persist when first run or when first-run defaults were applied

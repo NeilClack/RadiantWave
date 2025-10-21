@@ -12,8 +12,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 ### Removed
 ### Added
-### Fixed
+### Fixed  
+- Fixed slow program startup
 ### Changed
 ### Removed
 
 --- 
+
+## [v0.0.3]  
+
+### Added  
+- Added user manual markdown page  
+- Added logs to volume controls  
+
+### Fixed  
+- Fixed audio devices not switching when selected  
+- Fixed volume reseting to zero
+
+### Changed   
+- Changed default volume from 0% to 100%
