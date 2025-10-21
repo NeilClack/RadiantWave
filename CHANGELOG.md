@@ -10,12 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 ### Changed
+### Deprecated
 ### Removed
-### Added
 ### Fixed  
 - Fixed slow program startup
-### Changed
-### Removed
+### Security
 
 --- 
 
@@ -25,9 +24,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added user manual markdown page  
 - Added logs to volume controls  
 
+### Changed   
+- Changed default volume from 0% to 100%  
+- Applied high-pass filter to audio for better speaker compatibility  
+
 ### Fixed  
 - Fixed audio devices not switching when selected  
 - Fixed volume reseting to zero
-
-### Changed   
-- Changed default volume from 0% to 100%
