@@ -4,7 +4,6 @@ package mixer
 import (
 	"errors"
 	"fmt"
-	"math"
 	"os"
 	"sync"
 
@@ -58,14 +57,13 @@ func Init(wantedDevice string) error {
 	// Check if the volume is stored in the config; if not, default to max.
 	storedVolume := config.Get().LastVolume
 	if storedVolume < 0 {
-		// Set the default volume to max
 		currentVolume = mix.MAX_VOLUME
-		// Store the currentVolume in the config
 		config.Get().LastVolume = currentVolume
-		// Save config changes
 		if err := config.Get().Save(); err != nil {
 			logger.LogErrorF("saving default volume to config: %v", err)
 		}
+	} else {
+		currentVolume = storedVolume
 	}
 
 	inited = true
@@ -156,35 +154,26 @@ func Stop(fadeMs int) {
 	currentLoops = 0
 }
 
-// SetVolume01 sets music volume from 0.0..1.0 (perceptual curve optional; linear here).
-func SetVolume01(v float64) {
-	if v < 0 {
-		v = 0
-	}
-	if v > 1 {
-		v = 1
-	}
-	SetVolume128(int(math.Round(v * float64(mix.MAX_VOLUME))))
-}
-
 // SetVolume128 sets music volume using SDL_mixer’s 0..128 scale.
-func SetVolume128(v int) {
+func SetVolume128(increment int) {
 	mu.Lock()
 	defer mu.Unlock()
-	if v < 0 {
-		v = 0
+
+	currentVolume += increment
+
+	if currentVolume < 0 {
+		currentVolume = 0
+	} else if currentVolume > mix.MAX_VOLUME {
+		currentVolume = mix.MAX_VOLUME
 	}
-	if v > mix.MAX_VOLUME {
-		v = mix.MAX_VOLUME
-	}
-	currentVolume = v
-	// Store the currentVolume in the config
+
+	// Store in config
 	config.Get().LastVolume = currentVolume
-	// Save config changes
 	if err := config.Get().Save(); err != nil {
 		logger.LogErrorF("saving volume to config: %v", err)
 	}
-	// Apply immediately if possible
+
+	// Apply to SDL_mixer
 	if inited && deviceOpen {
 		mix.VolumeMusic(currentVolume)
 	}

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/go-gl/gl/v3.3-core/gl"
+	"github.com/veandco/go-sdl2/mix"
 	"github.com/veandco/go-sdl2/sdl"
 	"radiantwavetech.com/radiant_wave/internal/colors"
 	"radiantwavetech.com/radiant_wave/internal/config"
@@ -157,6 +158,23 @@ func (p *ScrollerPage) Init(app ApplicationInterface) error {
 				p.lines[i].words[j].X = p.lines[i].words[j-1].X + p.lines[i].words[j-1].W + spaceWidth
 			}
 			p.lines[i].words[j].Y = int32(p.scrollY) - int32(p.lineHeight)*int32(i)
+		}
+	}
+
+	configVolume := config.Get().LastVolume
+	mixerMaxVolume := mix.MAX_VOLUME
+	mixerVolume := mixer.GetVolume128()
+
+	logger.LogInfoF("configVolume: %d", configVolume)
+	logger.LogInfoF("mixerMaxVolume: %d", mixerMaxVolume)
+	logger.LogInfoF("mixerVolume: %d", mixerVolume)
+
+	// Switch audio devices
+	if mixer.CurrentDevice() != config.Get().AudioDeviceName {
+		if err := mixer.SwitchDevice(config.Get().AudioDeviceName); err != nil {
+			logger.LogErrorF("Failed to switch to audio device %q: %v", config.Get().AudioDeviceName, err)
+		} else {
+			logger.LogInfoF("Switched audio device to %q", config.Get().AudioDeviceName)
 		}
 	}
 
@@ -423,7 +441,21 @@ func (p *ScrollerPage) Destroy() error {
 	return nil
 }
 
-// Add this method to configure the automatic velocity system
+// SetAutoVelocity configures the automatic velocity system for the ScrollerPage.
+//
+// When enabled, the velocity will automatically oscillate between a negative floor
+// and a positive ceiling value, increasing or decreasing by a fixed step at a given delay.
+// The system holds the velocity at each extreme (floor or ceiling) for a specified duration
+// before reversing direction.
+//
+// Parameters:
+//
+//	enabled - Enables (true) or disables (false) the automatic velocity system.
+//	floor   - The minimum velocity in units per second (positive value; internally converted to negative).
+//	ceiling - The maximum velocity in units per second (positive value).
+//	step    - The velocity increment per update in units per second (positive value).
+//	delay   - Time between velocity updates in seconds.
+//	hold    - Duration to hold at floor or ceiling velocity before changing direction, in seconds.
 func (p *ScrollerPage) SetAutoVelocity(enabled bool, floor, ceiling, step, delay, hold float32) {
 	p.autoVelocity = enabled
 	p.velocityFloor = -float32(math.Abs(float64(floor)))    // Ensure floor is negative
