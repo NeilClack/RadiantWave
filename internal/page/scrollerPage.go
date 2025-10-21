@@ -160,6 +160,15 @@ func (p *ScrollerPage) Init(app ApplicationInterface) error {
 		}
 	}
 
+	// Switch audio devices
+	if mixer.CurrentDevice() != config.Get().AudioDeviceName {
+		if err := mixer.SwitchDevice(config.Get().AudioDeviceName); err != nil {
+			logger.LogErrorF("Failed to switch to audio device %q: %v", config.Get().AudioDeviceName, err)
+		} else {
+			logger.LogInfoF("Switched audio device to %q", config.Get().AudioDeviceName)
+		}
+	}
+
 	// Start audio playback
 	logger.LogInfo("Starting audio playback")
 	if config.Get().SelectedAudioFilePath == "" {
