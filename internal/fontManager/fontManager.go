@@ -218,7 +218,7 @@ func (fm *FontManager) CreateScrambledFont(baseFontName, newFontName string) err
 // Returns an error if the surface cannot be locked, nil otherwise.
 func (fm *FontManager) scrambleSurface(surface *sdl.Surface, r rune) error {
 	if surface.W < 8 || surface.H < 8 {
-		return nil // Skip tiny glyphs
+		return nil
 	}
 	if err := surface.Lock(); err != nil {
 		return fmt.Errorf("could not lock surface for scrambling: %w", err)
