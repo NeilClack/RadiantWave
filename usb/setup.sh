@@ -29,6 +29,13 @@ if [[ "$SYSTEM_TYPE" != "home" && "$SYSTEM_TYPE" != "commercial" ]]; then
   exit 1
 fi
 
+# Set partition based on system type
+if [[ "$SYSTEM_TYPE" == "commercial" ]]; then
+  CRYPT_PARTITION="/dev/sda2"
+else
+  CRYPT_PARTITION="/dev/nvme0n1p2"
+fi
+
 cd /tmp
 
 declare -A STATUS
@@ -56,7 +63,7 @@ run_step "Configure mkinitcpio" \
   sed -i 's/^HOOKS=.*/HOOKS=(base systemd autodetect microcode modconf kms keyboard sd-vconsole block sd-encrypt filesystems fsck)/' /etc/mkinitcpio.conf
 
 run_step "Write kernel cmdline" bash -c '
-  CRYPT_DEV="/dev/nvme0n1p2"
+  CRYPT_DEV="'"$CRYPT_PARTITION"'"
   LUKS_UUID="$(blkid -s UUID -o value "$CRYPT_DEV")"
   if [[ -z "${LUKS_UUID:-}" ]]; then
     echo "[WARN] Could not read LUKS UUID from $CRYPT_DEV"; exit 1
@@ -72,14 +79,14 @@ run_step "Fix mkinitcpio preset for UKI" bash -c '
 
 run_step "Bind TPM2 to LUKS (if TPM present)" bash -c '
   if [[ -e /dev/tpmrm0 ]]; then
-    systemd-cryptenroll --tpm2-device=auto --tpm2-pcrs=0+7 /dev/nvme0n1p2
+    systemd-cryptenroll --tpm2-device=auto --tpm2-pcrs=0+7 '"$CRYPT_PARTITION"'
   else
     echo "[WARN] /dev/tpmrm0 not found; deferring TPM2 enrollment to first boot"
   fi
 '
 
 run_step "Verify TPM2 enrollment (non-fatal if deferred)" bash -c '
-  cryptsetup luksDump /dev/nvme0n1p2 | grep -A4 -n "Token:" || {
+  cryptsetup luksDump '"$CRYPT_PARTITION"' | grep -A4 -n "Token:" || {
     echo "[WARN] TPM2 token not visible yet (ok if deferred)"; exit 0
   }
 '
