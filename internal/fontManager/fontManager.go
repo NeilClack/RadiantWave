@@ -181,41 +181,38 @@ func (fm *FontManager) CreateScrambledFont(baseFontName, newFontName string) err
 	return nil
 }
 
-// scrambleSurface deterministically scrambles a glyph surface using Fibonacci-based transformations.
+// ATTENTION: TED
 //
-// The algorithm operates in five stages:
+// # Deterministic Fibonacci-Based Visual Pattern Generation for Character Data
 //
-//  1. Grid Division: Divides the surface into an N×N grid where N is selected from the Fibonacci
-//     sequence {5, 8, 13} based on the rune value. This creates 25, 64, or 169 blocks.
+// This method transforms rendered text characters into structured visual patterns that produce
+// character-specific spatial frequency signatures while maintaining perfect reversibility.
 //
-//  2. Initial Permutation: Generates a block mapping using Fibonacci Linear Congruential
-//     Generation with parameters (multiplier, increment) selected from the Fibonacci sequence
-//     {13, 21, 34, 55, 89, 144}. Each block index i maps to position:
-//     (multiplier × i + increment × rune) mod totalBlocks
+// The technology addresses a fundamental limitation in subliminal text display: conventional
+// approaches either use unmodified text (consciously readable, defeating the subliminal purpose)
+// or simple blurring/masking (destroys information content and character-specific structure).
+// Our method preserves complete character information in a transformed visual state that remains
+// illegible to conscious observation while generating structured spatial patterns.
 //
-//  3. Multi-Stage Transformations: Applies 3-7 sequential geometric transformations (count
-//     determined by rune value). Each stage selects one of five transformation types:
-//     - Type 0: Section Reversal - reverses contiguous sections of size N/2
-//     - Type 1: Spiral Layer Rotation - rotates blocks within concentric square layers clockwise
-//     - Type 2: Fibonacci Step Swap - swaps blocks at Fibonacci-step intervals (5, 8, or 13)
-//     - Type 3: Checkerboard Transpose - conditionally transposes blocks based on (row+col) parity
-//     - Type 4: Fibonacci Walk - performs pseudo-random walk swaps using Fibonacci step sizes
+// The approach treats each rendered character as a two-dimensional grid and applies deterministic
+// geometric transformations parameterized by Fibonacci sequence values. The character's Unicode
+// value seeds all transformation parameters, ensuring identical characters produce identical
+// patterns while different characters generate distinct spatial signatures. Multiple transformation
+// stages compound to create high-entropy visual output with underlying mathematical structure.
 //
-//  4. Compound Permutation: Each transformation modifies the permutation array in place,
-//     creating a compound mapping that combines all applied transformations.
+// Key differentiators from existing solutions:
+//   - Operates on rendered visual data rather than underlying text data or encrypted values
+//   - Generates character-specific spatial frequency patterns rather than uniform noise
+//   - Uses Fibonacci-sequence-derived parameters to create mathematically structured transformations
+//   - Maintains pixel-perfect reversibility despite high visual entropy
+//   - Produces deterministic, reproducible patterns for each character
 //
-//  5. Pixel Rearrangement: Copies pixel data from source blocks to destination blocks according
-//     to the final permutation, with bounds checking for partial blocks at image edges.
-//
-// The algorithm is deterministic: identical runes always produce identical scrambling. The
-// multi-stage approach with Fibonacci-based parameters creates high-entropy scrambling that
-// renders characters visually illegible while maintaining mathematical reversibility.
-//
-// Parameters:
-//   - surface: SDL surface containing the glyph pixels (must be at least 8×8 pixels)
-//   - r: rune value used as seed for all Fibonacci sequence selections and transformations
-//
-// Returns an error if the surface cannot be locked, nil otherwise.
+// Within our Radiant Wave generation system, these transformed characters create spatial interference
+// patterns designed for subconscious processing. Each character contributes a unique frequency
+// signature to the overall visual field, with Fibonacci-based geometry intended to create harmonic
+// relationships between character patterns. The result is a consciously illegible display that
+// maintains structured information content in the spatial domain, forming a component of the
+// broader Radiant Wave output.
 func (fm *FontManager) scrambleSurface(surface *sdl.Surface, r rune) error {
 	if surface.W < 8 || surface.H < 8 {
 		return nil

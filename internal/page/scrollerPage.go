@@ -1,3 +1,59 @@
+// ATTENTION: TED
+//
+// # Integrated Multi-Domain Radiant Wave Generation System
+//
+// This module implements the complete Radiant Wave generation system by synchronizing multiple
+// subsystems that operate simultaneously across spatial, temporal, and chromatic
+// domains to produce a unified frequency-structured visual output for subliminal affirmation display.
+//
+// The technology addresses the fundamental challenge of presenting textual affirmation content
+// in a format optimized for subconscious processing rather than conscious reading. Conventional
+// subliminal text systems use isolated techniques (simple masking, single-frequency flashing, or
+// uniform scrolling) that operate in only one domain. Our system integrates four mathematically-
+// synchronized subsystems, each generating Fibonacci-based patterns in different domains, creating
+// a compound frequency signature designed to enhance subconscious absorption while maintaining
+// conscious illegibility.
+//
+// The system architecture integrates:
+//
+//  1. Spatial Character Transformation - Each rendered character undergoes Fibonacci-based
+//     block scrambling (described separately), creating local spatial frequency patterns at
+//     the character level.
+//
+//  2. Spatial Line Distribution - Text lines contain varying word counts following an oscillating
+//     Fibonacci sequence (1, 1, 2, 3, 5, 8, 13... then reversing), creating a macro-level
+//     two-dimensional wave pattern in the display geometry and ensuring balanced temporal
+//     exposure of affirmation content segments.
+//
+//  3. Temporal Color Modulation - Sequential words receive colors from an intent-based palette,
+//     with color duration determined by an oscillating Fibonacci sequence, creating rhythmic
+//     chromatic variation synchronized with natural mathematical progression.
+//
+//  4. Temporal Velocity Modulation - Display scroll velocity oscillates between negative and
+//     positive extremes with acceleration/deceleration rates and hold periods, creating a
+//     "breathing" temporal rhythm for the entire visual field.
+//
+// The key innovation lies in the temporal and mathematical synchronization of these subsystems.
+// All four operate on Fibonacci-derived parameters, creating harmonic relationships between the
+// spatial frequencies (character scrambling, line wave patterns), chromatic frequencies (color
+// duration oscillation), and temporal frequencies (scroll velocity modulation). This multi-domain
+// integration produces what we term the "Radiant Wave" - a compound frequency signature where
+// spatial, temporal, and chromatic patterns reinforce each other through mathematical harmony.
+//
+// Key differentiators from existing solutions:
+//   - Integrates four distinct Fibonacci-based frequency generators in a single system
+//   - Synchronizes pattern generation across spatial, temporal, and chromatic domains
+//   - Creates compound frequency signatures rather than isolated single-domain effects
+//   - Maintains character-specific and content-specific mathematical structure throughout
+//   - Uses bidirectional oscillation across multiple subsystems for rhythmic coherence
+//   - Combines macro-level (line patterns, velocity) and micro-level (character, color) modulation
+//
+// The system loads affirmation text content, processes it through all four subsystems simultaneously,
+// and generates a continuously scrolling display where every element - from individual character
+// pixels to overall scroll rhythm - contributes to the unified Radiant Wave output. The mathematical
+// relationships between subsystems create interference patterns and harmonic resonances designed
+// to enhance subconscious processing of the affirmation content while maintaining conscious
+// illegibility through the character scrambling subsystem.
 package page
 
 import (
