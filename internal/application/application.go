@@ -3,12 +3,15 @@ package application
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/go-gl/gl/v3.3-core/gl"
 	"github.com/veandco/go-sdl2/sdl"
 	"github.com/veandco/go-sdl2/ttf"
 	"radiantwavetech.com/radiantwave/internal/config"
+	"radiantwavetech.com/radiantwave/internal/database"
 	"radiantwavetech.com/radiantwave/internal/fontManager"
 	"radiantwavetech.com/radiantwave/internal/graphics"
 	"radiantwavetech.com/radiantwave/internal/keybinds"
@@ -54,6 +57,34 @@ type ValidationReport struct {
 
 // Run is the core application entry point.
 func Run() error {
+	// Initialize the application in the following order:
+	// 1. Load Configuration
+	// 1a. Initialize the Database
+	// 2. Logger
+	// 3. SDL & OpenGL
+	// 4. ShaderManager
+	// 5. FontManager
+	// 6. Configuration Validation
+	// 7. Music Mixer
+	// 8. Main Event Loop
+
+	// Load the application configuration
+	if err := config.Get().Load(); err != nil {
+		return fmt.Errorf("failed to load application configuration: %v", err)
+	}
+
+	// Initialize the Database
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("could not determine user home directory: %w", err)
+	}
+	dbPath := filepath.Join(homeDir, ".radiantwave", "data.db")
+
+	err = database.InitDatabase(dbPath)
+	if err != nil {
+		return fmt.Errorf("failed to initialize database: %v", err)
+	}
+
 	// Create the Application object without the Config field
 	app := &Application{}
 
