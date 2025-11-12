@@ -2,11 +2,12 @@ package page
 
 import (
 	"fmt"
+	"strconv"
 
 	"github.com/go-gl/gl/v3.3-core/gl"
 	"github.com/go-gl/mathgl/mgl32"
 	"github.com/veandco/go-sdl2/sdl"
-	"radiantwavetech.com/radiantwave/internal/config"
+	"radiantwavetech.com/radiantwave/internal/db"
 	"radiantwavetech.com/radiantwave/internal/fontManager"
 	"radiantwavetech.com/radiantwave/internal/logger"
 	"radiantwavetech.com/radiantwave/internal/shaderManager"
@@ -14,8 +15,6 @@ import (
 
 type EmailAddressPage struct {
 	Base
-	logger *logger.Logger
-	config *config.Config
 
 	title              string
 	titleTextureID     uint32
@@ -30,14 +29,19 @@ type EmailAddressPage struct {
 
 // Init performs basic page initialization and creation of static assets.
 func (p *EmailAddressPage) Init(app ApplicationInterface) error {
-	p.config = config.Get()
-	p.logger = logger.Get()
-	p.logger.Info("Initializing EmailAddressPage")
+	logger.InfoF("Initializing EmailAddressPage")
 
 	if err := p.Base.Init(app); err != nil {
 		return fmt.Errorf("failed base page initialization: %w", err)
 	}
+
 	p.title = "Your Email Address"
+
+	// Get application font from database
+	applicationFont, err := db.GetConfigValue("application_font")
+	if err != nil {
+		return fmt.Errorf("retrieving application_font from db: %w", err)
+	}
 
 	fm := fontManager.Get()
 	textShader, ok := shaderManager.Get().Get("text")
@@ -45,7 +49,8 @@ func (p *EmailAddressPage) Init(app ApplicationInterface) error {
 		return fmt.Errorf("unable to fetch text shader")
 	}
 
-	titleTextureID, titleWidth, titleHeight, err := fm.CreateStringTexture(p.config.ApplicationFont, p.title, textShader)
+	// Create title texture
+	titleTextureID, titleWidth, titleHeight, err := fm.CreateStringTexture(applicationFont, p.title, textShader)
 	if err != nil {
 		return fmt.Errorf("failed to create title texture: %w", err)
 	}
@@ -53,12 +58,17 @@ func (p *EmailAddressPage) Init(app ApplicationInterface) error {
 		return fmt.Errorf("CreateStringTexture returned a nil texture ID")
 	}
 
-	p.logger.Infof("Created title texture %d", titleTextureID)
+	logger.InfoF("Created title texture %d", titleTextureID)
 	p.titleTextureID = titleTextureID
 	p.titleTextureWidth = titleWidth
 	p.titleTextureHeight = titleHeight
 
-	emailAddress := config.Get().EmailAddress // Renamed from SerialNumber
+	// Load existing email address from database
+	emailAddress, err := db.GetConfigValue("email_address")
+	if err != nil {
+		return fmt.Errorf("retrieving email_address from db: %w", err)
+	}
+
 	if emailAddress != "" {
 		p.inputText = emailAddress
 	} else {
@@ -80,22 +90,27 @@ func (p *EmailAddressPage) HandleEvent(event *sdl.Event) error {
 	switch e := actualEvent.(type) {
 	case *sdl.TextInputEvent:
 		p.inputText += e.GetText()
-		p.logger.Infof("Input text updated: %s", p.inputText)
+		logger.InfoF("Input text updated: %s", p.inputText)
 	case *sdl.KeyboardEvent:
 		if e.Type == sdl.KEYDOWN {
 			switch e.Keysym.Sym {
 			case sdl.K_RETURN:
 				sdl.StopTextInput()
-				config.Get().EmailAddress = p.inputText // Renamed from SerialNumber
-				config.Get().Update()
-				logger.LogInfoF("Email Submitted: %s", p.inputText)
-				if config.Get().EmailAddress != "" {
+
+				// Save email address to database
+				if err := db.SetConfigValue("email_address", p.inputText); err != nil {
+					return fmt.Errorf("failed to save email address: %w", err)
+				}
+
+				logger.InfoF("Email Submitted: %s", p.inputText)
+
+				if p.inputText != "" {
 					p.Base.App.PopPage() // Remove this page from the pageStack
 				}
 			case sdl.K_BACKSPACE:
 				if len(p.inputText) > 0 {
 					p.inputText = p.inputText[:len(p.inputText)-1]
-					p.logger.Infof("Input text updated: %s", p.inputText)
+					logger.InfoF("Input text updated: %s", p.inputText)
 				}
 			}
 		}
@@ -105,47 +120,68 @@ func (p *EmailAddressPage) HandleEvent(event *sdl.Event) error {
 
 // Update updates animations and changing textures and other changes using `dt` which represents a time delta in float32.
 func (p *EmailAddressPage) Update(dt float32) error {
-	if len(p.inputText) > 0 {
-		fm := fontManager.Get()
-		sm := shaderManager.Get()
-		shader, ok := sm.Get("text")
-		if !ok {
-			logger.LogErrorF("unable to fetch shader")
-			return fmt.Errorf("unable to fetch shader")
-		}
-		// Create the new inputText texture
-		inputTextTextureID, inputTextTextureWidth, inputTextTextureHeight, err := fm.CreateStringTexture(
-			config.Get().ApplicationFont,
-			p.inputText,
-			shader,
-		)
-		if err != nil {
-			return fmt.Errorf("unable to create new input text texture")
-		}
-
-		p.inputTextTextureID = inputTextTextureID
-		p.inputTextTextureWidth = inputTextTextureWidth
-		p.inputTextTextureHeight = inputTextTextureHeight
-
+	if len(p.inputText) == 0 {
+		return nil
 	}
+
+	// Get application font from database
+	applicationFont, err := db.GetConfigValue("application_font")
+	if err != nil {
+		return fmt.Errorf("retrieving application_font from db: %w", err)
+	}
+
+	fm := fontManager.Get()
+	sm := shaderManager.Get()
+	shader, ok := sm.Get("text")
+	if !ok {
+		return fmt.Errorf("unable to fetch text shader")
+	}
+
+	// Create the new inputText texture
+	inputTextTextureID, inputTextTextureWidth, inputTextTextureHeight, err := fm.CreateStringTexture(
+		applicationFont,
+		p.inputText,
+		shader,
+	)
+	if err != nil {
+		return fmt.Errorf("unable to create new input text texture: %w", err)
+	}
+
+	// Delete old texture if it exists
+	if p.inputTextTextureID != 0 {
+		gl.DeleteTextures(1, &p.inputTextTextureID)
+	}
+
+	p.inputTextTextureID = inputTextTextureID
+	p.inputTextTextureWidth = inputTextTextureWidth
+	p.inputTextTextureHeight = inputTextTextureHeight
+
 	return nil
 }
 
 // Render performs page drawing logic.
 func (p *EmailAddressPage) Render() error {
-	config := config.Get()
+	// Get base font size from database
+	baseFontSizeStr, err := db.GetConfigValue("init_font_size")
+	if err != nil {
+		return fmt.Errorf("retrieving init_font_size from db: %w", err)
+	}
+	baseFontSize, err := strconv.Atoi(baseFontSizeStr)
+	if err != nil {
+		return fmt.Errorf("parsing init_font_size: %w", err)
+	}
+
 	sm := shaderManager.Get()
 
 	// 1. Calculate Scale
 	titleFontSize := int32(64)
-	titleScale := float32(titleFontSize) / float32(config.BaseFontSize)
+	titleScale := float32(titleFontSize) / float32(baseFontSize)
 	padding := int32(4)
 	verticalMargin := int32(20)
 
 	// 2. Define dimensions
-	// TODO: Increase the size of the input box
 	targetFontSize := int32(36)
-	scale := float32(targetFontSize) / float32(config.BaseFontSize)
+	scale := float32(targetFontSize) / float32(baseFontSize)
 	border := int32(3)
 	boxH := targetFontSize + (padding * 2)
 	boxW := int32(600) + (padding * 2)
@@ -188,7 +224,7 @@ func (p *EmailAddressPage) Render() error {
 	p.Base.RenderSolidColorQuad(solidShader, boxPosition, boxDimensions, darkGrey)
 	p.Base.RenderTexture(textShader, p.titleTextureID, titlePosition, titleDimensions, white)
 	if len(p.inputText) > 0 {
-		logger.LogInfoF("inputTextTextureID: %d", p.inputTextTextureID)
+		logger.InfoF("inputTextTextureID: %d", p.inputTextTextureID)
 		p.Base.RenderTexture(textShader, p.inputTextTextureID, inputTextPosition, inputTextDimensions, white)
 	}
 	return nil
@@ -196,15 +232,14 @@ func (p *EmailAddressPage) Render() error {
 
 // Destroy cleans up page-specific resources.
 func (p *EmailAddressPage) Destroy() error {
-	p.logger.Info("Destroying EmailAddressPage...")
-	// titleTextureID is now managed by Base.Destroy, so we remove its explicit deletion here.
-	// gl.DeleteTextures(1, &p.titleTextureID) // Removed as Base.Destroy handles it
+	logger.InfoF("Destroying EmailAddressPage...")
 
-	// inputTextTextureID is still managed explicitly due to its dynamic nature
+	// Delete input text texture if it exists
 	if p.inputTextTextureID != 0 {
 		gl.DeleteTextures(1, &p.inputTextTextureID)
-		p.inputTextTextureID = 0 // Reset ID after deletion
+		p.inputTextTextureID = 0
 	}
-	sdl.StopTextInput()     // Stop text input when the page is destroyed
-	return p.Base.Destroy() // Call the Base page's Destroy method to clean up common resources and managedTextureIDs
+
+	sdl.StopTextInput()
+	return p.Base.Destroy()
 }

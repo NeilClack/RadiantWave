@@ -1,4 +1,4 @@
-package database
+package db
 
 import (
 	"log"
@@ -85,9 +85,9 @@ func seedDefaults() error {
 	return nil
 }
 
-// GetValue retrieves a configuration value by key
+// GetConfigValue retrieves a configuration value by key
 // Returns the value OR any error encountered
-func GetValue(key string) (string, error) {
+func GetConfigValue(key string) (string, error) {
 	var config Config
 	result := DB.First(&config, "key = ?", key)
 	if result.Error != nil {
@@ -96,9 +96,37 @@ func GetValue(key string) (string, error) {
 	return config.Value, nil
 }
 
-// SetValue sets a configuration value by key
+// GetConfigValues retrieves all configuration key-value pairs
+// Returns a map of key-value pairs OR any error encountered
+// This is mainly for compatibility with legacy code, but can
+// be useful for bulkl config referrals
+func GetConfigValues() (map[string]string, error) {
+	var configs []Config
+	result := DB.Find(&configs)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	configMap := make(map[string]string)
+	for _, config := range configs {
+		configMap[config.Key] = config.Value
+	}
+	return configMap, nil
+}
+
+// SetConfigValue sets a configuration value by key
 // Returns any error encountered || nil
-func SetValue(key string, value string) error {
+func SetConfigValue(key string, value string) error {
 	config := Config{Key: key, Value: value}
 	return DB.Save(&config).Error
+}
+
+// GetAffirmations retrieves all affirmation entries from the database
+// Returns a slice of Affirmations OR any error encountered
+func GetAffirmations() ([]Affirmations, error) {
+	var affirmations []Affirmations
+	result := DB.Find(&affirmations)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	return affirmations, nil
 }

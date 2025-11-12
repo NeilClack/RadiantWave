@@ -21,7 +21,7 @@ func Register(k sdl.Keycode, m sdl.Keymod, action func()) {
 	newCombo := KeyCombo{k, mod}
 	_, ok := Binds[newCombo]
 	if ok {
-		logger.LogError("Unable to bind key combo, combo already exists")
+		logger.Error("Unable to bind key combo, combo already exists")
 	}
 	Binds[newCombo] = action
 }

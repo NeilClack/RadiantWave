@@ -6,7 +6,6 @@ import (
 
 	"github.com/go-gl/gl/v3.3-core/gl"
 	"github.com/veandco/go-sdl2/sdl"
-	"radiantwavetech.com/radiantwave/internal/config"
 )
 
 func CreateTextureFromSurface(surface *sdl.Surface) (uint32, error) {
@@ -134,14 +133,8 @@ func CheckGLError() error {
 	return nil
 }
 
+// DEPRECATED: SetDisplayOrientation is a placeholder for compatibility.
+// To be removed
 func SetDisplayOrientation(w int32, h int32) (int32, int32) {
-	config := config.Get()
-	if config.DisplayOrientation == 1 { // Horizontal, so just return the values
-		return w, h
-	} else if config.DisplayOrientation == 2 {
-		w, h = h, w // Vertical orientation, so flip the values
-		return w, h
-	} else {
-		return w, h
-	}
+	return w, h
 }

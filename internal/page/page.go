@@ -92,8 +92,7 @@ func (p *Base) Init(app ApplicationInterface) error {
 
 // Destroy cleans up the common OpenGL resources.
 func (p *Base) Destroy() error {
-	logger := logger.Get()
-	logger.Infof("Destroying base resources: (VAO: %d, VBO: %d)", p.QuadVAO, p.QuadVBO)
+	logger.InfoF("Destroying base resources: (VAO: %d, VBO: %d)", p.QuadVAO, p.QuadVBO)
 	gl.DeleteBuffers(1, &p.QuadVBO)
 	gl.DeleteVertexArrays(1, &p.QuadVAO)
 	return nil

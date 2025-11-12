@@ -10,8 +10,7 @@ import (
 	"github.com/go-gl/gl/v3.3-core/gl"
 	"github.com/veandco/go-sdl2/sdl"
 	"github.com/veandco/go-sdl2/ttf"
-	"radiantwavetech.com/radiantwave/internal/config"
-	"radiantwavetech.com/radiantwave/internal/database"
+	"radiantwavetech.com/radiantwave/internal/db"
 	"radiantwavetech.com/radiantwave/internal/fontManager"
 	"radiantwavetech.com/radiantwave/internal/graphics"
 	"radiantwavetech.com/radiantwave/internal/keybinds"
@@ -68,11 +67,6 @@ func Run() error {
 	// 7. Music Mixer
 	// 8. Main Event Loop
 
-	// Load the application configuration
-	if err := config.Get().Load(); err != nil {
-		return fmt.Errorf("failed to load application configuration: %v", err)
-	}
-
 	// Initialize the Database
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
@@ -80,7 +74,9 @@ func Run() error {
 	}
 	dbPath := filepath.Join(homeDir, ".radiantwave", "data.db")
 
-	err = database.InitDatabase(dbPath)
+	logger.InitLogger(filepath.Join(homeDir, ".radiantwave"))
+
+	err = db.InitDatabase(dbPath)
 	if err != nil {
 		return fmt.Errorf("failed to initialize database: %v", err)
 	}
@@ -88,15 +84,9 @@ func Run() error {
 	// Create the Application object without the Config field
 	app := &Application{}
 
-	logger.InitLogger()
-
-	logger := logger.Get()
-
-	logger.Info("Application starting")
-
 	// Initializing SDL systems
 	logger.Info("Initializing SDL systems")
-	if err := initializeSDL(logger); err != nil {
+	if err := initializeSDL(); err != nil {
 		return fmt.Errorf("failed to initialize SDL: %v", err)
 	}
 	defer ttf.Quit()
@@ -104,10 +94,10 @@ func Run() error {
 
 	displayMode, err := sdl.GetDisplayMode(0, 0)
 	if err != nil {
-		logger.Errorf("failed to query diapay mode for display 0: %v", err)
+		logger.ErrorF("failed to query diapay mode for display 0: %v", err)
 		return fmt.Errorf("failed to query diapay mode for display 0: %v", err)
 	}
-	logger.Infof("Display mode: %dx%d", displayMode.W, displayMode.H)
+	logger.InfoF("Display mode: %dx%d", displayMode.W, displayMode.H)
 	if displayMode.W == 0 || displayMode.H == 0 {
 		return fmt.Errorf("invalid display mode dimensions: %dx%d", displayMode.W, displayMode.H)
 	}
@@ -135,8 +125,8 @@ func Run() error {
 	}
 	version := gl.GoStr(gl.GetString(gl.VERSION))
 	renderer := gl.GoStr(gl.GetString(gl.RENDERER))
-	logger.Infof("OpenGL version: %s", version)
-	logger.Infof("OpenGL renderer: %s", renderer)
+	logger.InfoF("OpenGL version: %s", version)
+	logger.InfoF("OpenGL renderer: %s", renderer)
 	logger.Info("SDL & OpenGL successfully initialized.")
 	app.initKeybinds()
 
@@ -156,11 +146,15 @@ func Run() error {
 	}
 
 	// Initialize the Music Mixer
-	mixer.Init(config.Get().AudioDeviceName)
+	audioDevice, err := db.GetConfigValue("audio_device_name")
+	if err != nil {
+		return fmt.Errorf("failed to get audio device name from config: %v", err)
+	}
+	mixer.Init(audioDevice)
 
 	// Start the main application loop
 	if err := app.runEventLoop(); err != nil {
-		logger.Errorf("The main event loop exited with an error: %v", err)
+		logger.ErrorF("The main event loop exited with an error: %v", err)
 		return err
 	}
 
@@ -178,10 +172,10 @@ func (app *Application) runEventLoop() error {
 	lastTime := time.Now()
 	pageStackLength := len(app.pageStack)
 	if pageStackLength == 0 {
-		logger.LogErrorF("no initial page loaded, pageStack empty!")
+		logger.ErrorF("no initial page loaded, pageStack empty!")
 		return fmt.Errorf("no initial page loaded, pageStack empty")
 	} else {
-		logger.LogInfo("Successfully initialized first page in pageStack")
+		logger.Info("Successfully initialized first page in pageStack")
 	}
 
 	for app.running {
@@ -196,7 +190,7 @@ func (app *Application) runEventLoop() error {
 				if e.Type == sdl.KEYDOWN && e.Repeat == 0 {
 					isCtrlPressed := (e.Keysym.Mod&sdl.KMOD_CTRL) != 0 || (e.Keysym.Mod&sdl.KMOD_GUI) != 0
 					if e.Keysym.Sym == sdl.K_c && isCtrlPressed {
-						logger.LogInfo("User attemped to exit program!")
+						logger.Info("User attemped to exit program!")
 						continue
 					}
 					keybinds.PerformAction(e)
@@ -206,7 +200,7 @@ func (app *Application) runEventLoop() error {
 			// Always use the current top of the stack for event handling
 			if len(app.pageStack) > 0 {
 				if err := app.pageStack[len(app.pageStack)-1].HandleEvent(&event); err != nil {
-					logger.LogWarningF("Error handling event in page: %v", err)
+					logger.WarningF("Error handling event in page: %v", err)
 				}
 			}
 		}
@@ -278,7 +272,7 @@ func (app *Application) initKeybinds() {
 		sdl.K_UP,
 		sdl.KMOD_SHIFT,
 		func() {
-			logger.LogInfoF("Increasing volume %d + 16", mixer.GetVolume128())
+			logger.InfoF("Increasing volume %d + 16", mixer.GetVolume128())
 			mixer.SetVolume128(16)
 		},
 	)
@@ -288,7 +282,7 @@ func (app *Application) initKeybinds() {
 		sdl.K_DOWN,
 		sdl.KMOD_SHIFT,
 		func() {
-			logger.LogInfoF("Decreasing volume %d - 16", mixer.GetVolume128())
+			logger.InfoF("Decreasing volume %d - 16", mixer.GetVolume128())
 			mixer.SetVolume128(-16)
 		},
 	)
@@ -329,7 +323,7 @@ func (app *Application) schedulePush(p page.Page) {
 		// Initialize the new page and pass it the current app for configuration
 		if err := p.Init(app); err != nil {
 			// Log an error if Init fails
-			logger.LogErrorF("Failed to initialize new page, aborting push: %v", err)
+			logger.ErrorF("Failed to initialize new page, aborting push: %v", err)
 			return
 		}
 		// Get the current page at the end of the pageStack and check that it is not nil (pageStack is not empty)
@@ -339,14 +333,13 @@ func (app *Application) schedulePush(p page.Page) {
 		}
 		// Append the new page to the pageStack
 		app.pageStack = append(app.pageStack, p)
-		logger.LogInfoF("Pushed new page onto stack: %T", p)
+		logger.InfoF("Pushed new page onto stack: %T", p)
 	}
 }
 
 // scheduleSwitch schedules the current page to be replaced by a new one.
 func (app *Application) scheduleSwitch(p page.Page) {
 	app.pendingAction = func() {
-		logger := logger.Get()
 		// Get the top page using the helper method and destroy it.
 		if topPage := app.currentPage(); topPage != nil {
 			topPage.Destroy()
@@ -354,11 +347,11 @@ func (app *Application) scheduleSwitch(p page.Page) {
 		}
 		// Push the new page.
 		if err := p.Init(app); err != nil {
-			logger.Errorf("Failed to initialize new page, aborting switch: %v", err)
+			logger.ErrorF("Failed to initialize new page, aborting switch: %v", err)
 			return
 		}
 		app.pageStack = append(app.pageStack, p)
-		logger.Infof("Switched to new page: %T", p)
+		logger.InfoF("Switched to new page: %s", p)
 	}
 }
 
@@ -417,7 +410,7 @@ func (app *Application) PopPage() {
 		if topPage := app.currentPage(); topPage != nil {
 			topPage.Destroy()
 			app.pageStack = app.pageStack[:len(app.pageStack)-1]
-			logger.Get().Info("Popped page from stack.")
+			logger.Info("Popped page from stack.")
 		}
 	}
 }
@@ -442,13 +435,11 @@ func (app *Application) Close() {
 
 // Validate performs a series of checks to ensure the application is ready to run.
 func (app *Application) Validate() error {
-	logger.LogInfoF("Validating program state")
+	logger.InfoF("Validating program state")
 	report := &ValidationReport{
 		Checks:   make(map[ValidationCheck]CheckResult),
 		AllValid: true,
 	}
-
-	appConfig := config.Get() // Get the singleton instance
 
 	welcomePage := &page.Welcome{}
 	welcomePage.Init(app)
@@ -461,7 +452,7 @@ func (app *Application) Validate() error {
 		return fmt.Errorf("failed to initialize network manager: %w", err)
 	}
 	defer func() {
-		logger.LogInfoF("Closing network manager.")
+		logger.InfoF("Closing network manager.")
 		netManager.Close()
 	}()
 
@@ -474,7 +465,7 @@ func (app *Application) Validate() error {
 	status, err := netManager.WaitForInternet(maxWait, stableFor)
 	if err != nil {
 		// Not fatal by itself; we still have a status to report below.
-		logger.LogInfoF("Network wait error: %v", err)
+		logger.InfoF("Network wait error: %v", err)
 	}
 
 	isOnline := (status.StatusCode == network.StatusEthernetConnectedInternetUp ||
@@ -488,7 +479,11 @@ func (app *Application) Validate() error {
 		app.pageStack = append(app.pageStack, wifiSetupPage)
 	}
 
-	if appConfig.LicenseKey == "" {
+	licenseKey, err := db.GetConfigValue("license_key")
+	if err != nil {
+		return fmt.Errorf("failed to get license key from config: %v", err)
+	}
+	if licenseKey == "" {
 		report.Checks[LicenseKeyCheck] = CheckResult{false, "License key is missing from config."}
 		report.AllValid = false
 		licenseKeyPage := &page.LicenseKeyPage{}
@@ -498,7 +493,11 @@ func (app *Application) Validate() error {
 		report.Checks[LicenseKeyCheck] = CheckResult{true, "License key found."}
 	}
 
-	if appConfig.EmailAddress == "" {
+	emailAddress, err := db.GetConfigValue("email_address")
+	if err != nil {
+		return fmt.Errorf("failed to get email address from config: %v", err)
+	}
+	if emailAddress == "" {
 		report.Checks[EmailAddressCheck] = CheckResult{false, "Email address is missing from config."}
 		report.AllValid = false
 		emailAddressPage := &page.EmailAddressPage{}
@@ -515,7 +514,7 @@ func (app *Application) Validate() error {
 		report.Checks[SubscriptionCheck] = CheckResult{false, "Skipped due to previous validation failures."}
 	}
 	for checkType, result := range report.Checks {
-		logger.LogInfoF("Validation Report: %s : %s", checkType.String(), result.Message)
+		logger.InfoF("Validation Report: %s : %s", checkType.String(), result.Message)
 	}
 	app.ValidationReport = report
 	return nil
@@ -536,16 +535,16 @@ func (vc ValidationCheck) String() string {
 	}
 }
 
-func initializeSDL(logger *logger.Logger) error {
+func initializeSDL() error {
 	// os.Setenv("SDL_VIDEODRIVER", "kmsdrm") // This is done in the kiosk-session as ENV variables
 	if err := sdl.Init(sdl.INIT_VIDEO | sdl.INIT_AUDIO); err != nil {
-		logger.Errorf("failed to initialize critical SDL subsystems: %v", err)
+		logger.ErrorF("failed to initialize critical SDL subsystems: %v", err)
 		return err
 	}
 	logger.Info("Successfully initialized VIDEO and AUDIO subsystems")
-	logger.Infof("SDL audio backend: %s", sdl.GetCurrentAudioDriver())
+	logger.InfoF("SDL audio backend: %s", sdl.GetCurrentAudioDriver())
 	if err := ttf.Init(); err != nil {
-		logger.Errorf("failed to initialize critical component TTF : %v", err)
+		logger.ErrorF("failed to initialize critical component TTF : %v", err)
 		return fmt.Errorf("failed to initialize critical component TTF : %v", err)
 	}
 	logger.Info("Successfully initialized TTF")

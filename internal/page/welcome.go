@@ -2,12 +2,13 @@ package page
 
 import (
 	"fmt"
+	"strconv"
 
 	"github.com/go-gl/gl/v3.3-core/gl"
 	"github.com/go-gl/mathgl/mgl32"
 	"github.com/veandco/go-sdl2/sdl"
 	"radiantwavetech.com/radiantwave/internal/colors"
-	"radiantwavetech.com/radiantwave/internal/config"
+	"radiantwavetech.com/radiantwave/internal/db"
 	"radiantwavetech.com/radiantwave/internal/fontManager"
 	"radiantwavetech.com/radiantwave/internal/logger"
 	"radiantwavetech.com/radiantwave/internal/shaderManager"
@@ -25,9 +26,8 @@ type Welcome struct {
 
 // Init performs basic page initialization and creation of static assets.
 func (p *Welcome) Init(app ApplicationInterface) error {
-	var err error
-	// Setup
-	logger.LogInfoF("Initializing Welcome page")
+	logger.InfoF("Initializing Welcome page")
+
 	title := "Radiant Wave"
 	version := GitVersion
 	prompt := "Press F2 to Start, or F3 for Settings"
@@ -37,62 +37,89 @@ func (p *Welcome) Init(app ApplicationInterface) error {
 		return fmt.Errorf("failed base page initialization: %w", err)
 	}
 
+	// Get font
 	fm := fontManager.Get()
 	font, ok := fm.GetFont("Roboto-Regular")
 	if !ok {
 		return fmt.Errorf("unable to fetch font")
 	}
 
-	// Create Textures //
+	// Create title texture
+	var err error
 	p.title, err = NewStringItem(title, font, colors.White)
 	if err != nil {
-		logger.LogErrorF("unable to create title string texture: %v", err)
+		return fmt.Errorf("unable to create title string texture: %w", err)
 	}
-	logger.LogInfoF("Created title texture")
+	logger.InfoF("Created title texture")
 
-	// Version
+	// Create version texture
 	p.version, err = NewStringItem(version, font, colors.White)
 	if err != nil {
-		logger.LogErrorF("unable to create version string texture: %v", err)
+		return fmt.Errorf("unable to create version string texture: %w", err)
 	}
 
-	// Prompt
+	// Create prompt texture
 	p.prompt, err = NewStringItem(prompt, font, colors.White)
 	if err != nil {
-		logger.LogErrorF("unable to create prompt string texture: %v", err)
+		return fmt.Errorf("unable to create prompt string texture: %w", err)
 	}
 
+	// Create note texture
 	p.note, err = NewStringItem(note, font, colors.White)
 	if err != nil {
-		logger.LogErrorF("unable to create note string texture: %v", err)
+		return fmt.Errorf("unable to create note string texture: %w", err)
 	}
+
+	// Get base font size from database
+	baseFontSizeStr, err := db.GetConfigValue("init_font_size")
+	if err != nil {
+		return fmt.Errorf("retrieving init_font_size from db: %w", err)
+	}
+	baseFontSize, err := strconv.Atoi(baseFontSizeStr)
+	if err != nil {
+		return fmt.Errorf("parsing init_font_size: %w", err)
+	}
+
+	// Scale the note text
 	fontSize := int32(32)
-	scale := float32(fontSize) / float32(config.Get().BaseFontSize)
-	p.note.Scale((scale * .75))
+	scale := float32(fontSize) / float32(baseFontSize)
+	p.note.Scale(scale * 0.75)
 
 	return nil
 }
 
-// HandleEvent processes SDL events and handles them appropriately for the SerialNumberPage.
-func (p *Welcome) HandleEvent(event *sdl.Event) error { return nil }
+// HandleEvent processes SDL events and handles them appropriately for the Welcome page.
+func (p *Welcome) HandleEvent(event *sdl.Event) error {
+	return nil
+}
 
 // Update updates animations and changing textures and other changes using `dt` which represents a time delta in float32.
-func (p *Welcome) Update(dt float32) error { return nil }
+func (p *Welcome) Update(dt float32) error {
+	return nil
+}
 
 func (p *Welcome) Render() error {
-	cfg := config.Get()
-	sm := shaderManager.Get()
+	// Get base font size from database
+	baseFontSizeStr, err := db.GetConfigValue("init_font_size")
+	if err != nil {
+		return fmt.Errorf("retrieving init_font_size from db: %w", err)
+	}
+	baseFontSize, err := strconv.Atoi(baseFontSizeStr)
+	if err != nil {
+		return fmt.Errorf("parsing init_font_size: %w", err)
+	}
 
+	sm := shaderManager.Get()
 	verticalMargin := int32(20)
 
-	// 1) Scales
+	// 1) Calculate scales
 	titleFontSize := int32(64)
 	bodyFontSize := int32(32)
 
-	titleScale := float32(titleFontSize) / float32(cfg.BaseFontSize)
-	bodyScale := float32(bodyFontSize) / float32(cfg.BaseFontSize)
+	titleScale := float32(titleFontSize) / float32(baseFontSize)
+	bodyScale := float32(bodyFontSize) / float32(baseFontSize)
 
-	// 2) Dimensions (scaled)
+	// 2) Calculate dimensions (scaled)
 	titleW := float32(p.title.W) * titleScale
 	titleH := float32(p.title.H) * titleScale
 	titleDim := mgl32.Vec2{titleW, titleH}
@@ -109,7 +136,7 @@ func (p *Welcome) Render() error {
 	noteDim := p.note.RawDimensions()
 	noteW, noteH := noteDim[0], noteDim[1]
 
-	// 3) Total height of the vertical stack
+	// 3) Calculate total height of the vertical stack
 	totalH := int32(titleH) + verticalMargin +
 		int32(versionH) + verticalMargin +
 		int32(promptH) + verticalMargin +
@@ -132,7 +159,7 @@ func (p *Welcome) Render() error {
 	titlePos := mgl32.Vec2{float32(titleX), float32(titleY)}
 	versionPos := mgl32.Vec2{float32(versionX), float32(versionY)}
 
-	// 6) Render
+	// 6) Get shader and render
 	textShader, ok := sm.Get("text")
 	if !ok {
 		return fmt.Errorf("failed to fetch text shader")
@@ -149,9 +176,10 @@ func (p *Welcome) Render() error {
 
 // Destroy cleans up page-specific resources.
 func (p *Welcome) Destroy() error {
-	logger.LogInfoF("Destroying LicenseKeyPage...")
+	logger.InfoF("Destroying Welcome page...")
 	gl.DeleteTextures(1, &p.title.ID)
 	gl.DeleteTextures(1, &p.version.ID)
 	gl.DeleteTextures(1, &p.prompt.ID)
+	gl.DeleteTextures(1, &p.note.ID)
 	return p.Base.Destroy()
 }
