@@ -2,7 +2,7 @@ package pattern
 
 import (
 	"github.com/veandco/go-sdl2/sdl"
-	"radiantwavetech.com/radiant_wave/internal/colors"
+	"radiantwavetech.com/radiantwave/internal/colors"
 )
 
 type ColorPattern struct {

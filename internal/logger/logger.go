@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"radiantwavetech.com/radiant_wave/internal/config"
+	"radiantwavetech.com/radiantwave/internal/config"
 )
 
 // Logger is configured to write log messages to multiple destinations.

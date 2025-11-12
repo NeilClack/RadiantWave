@@ -8,10 +8,10 @@ import (
 
 	"github.com/go-gl/gl/v3.3-core/gl"
 	"github.com/veandco/go-sdl2/sdl"
-	"radiantwavetech.com/radiant_wave/internal/colors"
-	"radiantwavetech.com/radiant_wave/internal/config"
-	"radiantwavetech.com/radiant_wave/internal/fontManager"
-	"radiantwavetech.com/radiant_wave/internal/shaderManager"
+	"radiantwavetech.com/radiantwave/internal/colors"
+	"radiantwavetech.com/radiantwave/internal/config"
+	"radiantwavetech.com/radiantwave/internal/fontManager"
+	"radiantwavetech.com/radiantwave/internal/shaderManager"
 )
 
 type AffirmationOptions struct {

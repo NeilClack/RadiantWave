@@ -6,7 +6,7 @@ import (
 
 	"github.com/go-gl/gl/v3.3-core/gl"
 	"github.com/veandco/go-sdl2/sdl"
-	"radiantwavetech.com/radiant_wave/internal/config"
+	"radiantwavetech.com/radiantwave/internal/config"
 )
 
 func CreateTextureFromSurface(surface *sdl.Surface) (uint32, error) {

@@ -3,7 +3,7 @@ package keybinds
 
 import (
 	"github.com/veandco/go-sdl2/sdl"
-	"radiantwavetech.com/radiant_wave/internal/logger"
+	"radiantwavetech.com/radiantwave/internal/logger"
 )
 
 // KeyCombo represents a combination of a key and it's active modifier.

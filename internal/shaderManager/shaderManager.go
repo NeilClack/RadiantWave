@@ -8,8 +8,8 @@ import (
 	"sync"
 
 	"github.com/go-gl/gl/v3.3-core/gl"
-	"radiantwavetech.com/radiant_wave/internal/config"
-	"radiantwavetech.com/radiant_wave/internal/logger"
+	"radiantwavetech.com/radiantwave/internal/config"
+	"radiantwavetech.com/radiantwave/internal/logger"
 )
 
 // Shader represents a compiled GLSL program and its associated data.

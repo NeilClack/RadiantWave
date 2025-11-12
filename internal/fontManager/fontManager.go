@@ -11,10 +11,10 @@ import (
 	"github.com/go-gl/mathgl/mgl32"
 	"github.com/veandco/go-sdl2/sdl"
 	"github.com/veandco/go-sdl2/ttf"
-	"radiantwavetech.com/radiant_wave/internal/config"
-	"radiantwavetech.com/radiant_wave/internal/graphics"
-	"radiantwavetech.com/radiant_wave/internal/logger"
-	"radiantwavetech.com/radiant_wave/internal/shaderManager"
+	"radiantwavetech.com/radiantwave/internal/config"
+	"radiantwavetech.com/radiantwave/internal/graphics"
+	"radiantwavetech.com/radiantwave/internal/logger"
+	"radiantwavetech.com/radiantwave/internal/shaderManager"
 )
 
 // FontManager handles the loading and management of fonts.
