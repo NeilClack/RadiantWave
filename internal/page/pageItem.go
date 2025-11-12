@@ -5,8 +5,8 @@ import (
 
 	"github.com/go-gl/mathgl/mgl32"
 	"github.com/veandco/go-sdl2/sdl"
-	"radiantwavetech.com/radiant_wave/internal/fontManager"
-	"radiantwavetech.com/radiant_wave/internal/shaderManager"
+	"radiantwavetech.com/radiantwave/internal/fontManager"
+	"radiantwavetech.com/radiantwave/internal/shaderManager"
 )
 
 // PageItem defines the basic features of any item on any page

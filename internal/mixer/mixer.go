@@ -5,12 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"sync"
 
 	"github.com/veandco/go-sdl2/mix"
 	"github.com/veandco/go-sdl2/sdl"
-	"radiantwavetech.com/radiant_wave/internal/config"
-	"radiantwavetech.com/radiant_wave/internal/logger"
+	"radiantwavetech.com/radiantwave/internal/db"
+	"radiantwavetech.com/radiantwave/internal/logger"
 )
 
 var (
@@ -55,15 +56,24 @@ func Init(wantedDevice string) error {
 	}
 
 	// Check if the volume is stored in the config; if not, default to max.
-	storedVolume := config.Get().LastVolume
-	if storedVolume < 0 {
-		currentVolume = mix.MAX_VOLUME
-		config.Get().LastVolume = currentVolume
-		if err := config.Get().Save(); err != nil {
-			logger.LogErrorF("saving default volume to config: %v", err)
+	storedVolume, err := db.GetConfigValue("last_volume")
+	if err != nil {
+		return fmt.Errorf("retrieving last_volume from config: %w", err)
+	}
+
+	lastVolume, err := strconv.Atoi(storedVolume)
+	if err != nil {
+		return fmt.Errorf("parsing last_volume %q: %w", storedVolume, err)
+	}
+
+	if lastVolume < 0 {
+		lastVolume = mix.MAX_VOLUME
+		currentVolume = lastVolume
+		if err := db.SetConfigValue("last_volume", strconv.Itoa(lastVolume)); err != nil {
+			logger.ErrorF("saving default volume to config: %v", err)
 		}
 	} else {
-		currentVolume = storedVolume
+		currentVolume = lastVolume
 	}
 
 	inited = true
@@ -168,9 +178,8 @@ func SetVolume128(increment int) {
 	}
 
 	// Store in config
-	config.Get().LastVolume = currentVolume
-	if err := config.Get().Save(); err != nil {
-		logger.LogErrorF("saving volume to config: %v", err)
+	if err := db.SetConfigValue("last_volume", strconv.Itoa(currentVolume)); err != nil {
+		logger.ErrorF("saving volume to config: %v", err)
 	}
 
 	// Apply to SDL_mixer

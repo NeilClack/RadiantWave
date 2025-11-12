@@ -7,9 +7,9 @@ import (
 	"github.com/go-gl/gl/v3.3-core/gl"
 	"github.com/go-gl/mathgl/mgl32"
 	"github.com/veandco/go-sdl2/sdl"
-	"radiantwavetech.com/radiant_wave/internal/graphics"
-	"radiantwavetech.com/radiant_wave/internal/logger"
-	"radiantwavetech.com/radiant_wave/internal/shaderManager"
+	"radiantwavetech.com/radiantwave/internal/graphics"
+	"radiantwavetech.com/radiantwave/internal/logger"
+	"radiantwavetech.com/radiantwave/internal/shaderManager"
 )
 
 // Page defines the contract for all application screens.
@@ -92,8 +92,7 @@ func (p *Base) Init(app ApplicationInterface) error {
 
 // Destroy cleans up the common OpenGL resources.
 func (p *Base) Destroy() error {
-	logger := logger.Get()
-	logger.Infof("Destroying base resources: (VAO: %d, VBO: %d)", p.QuadVAO, p.QuadVBO)
+	logger.InfoF("Destroying base resources: (VAO: %d, VBO: %d)", p.QuadVAO, p.QuadVBO)
 	gl.DeleteBuffers(1, &p.QuadVBO)
 	gl.DeleteVertexArrays(1, &p.QuadVAO)
 	return nil

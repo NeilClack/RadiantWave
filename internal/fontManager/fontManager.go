@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -11,10 +12,10 @@ import (
 	"github.com/go-gl/mathgl/mgl32"
 	"github.com/veandco/go-sdl2/sdl"
 	"github.com/veandco/go-sdl2/ttf"
-	"radiantwavetech.com/radiant_wave/internal/config"
-	"radiantwavetech.com/radiant_wave/internal/graphics"
-	"radiantwavetech.com/radiant_wave/internal/logger"
-	"radiantwavetech.com/radiant_wave/internal/shaderManager"
+	"radiantwavetech.com/radiantwave/internal/db"
+	"radiantwavetech.com/radiantwave/internal/graphics"
+	"radiantwavetech.com/radiantwave/internal/logger"
+	"radiantwavetech.com/radiantwave/internal/shaderManager"
 )
 
 // FontManager handles the loading and management of fonts.
@@ -32,7 +33,7 @@ var (
 // It must be called once at startup after ShaderManager has been initialized.
 func InitFontManager() error {
 	fontManagerOnce.Do(func() {
-		logger.LogInfo("Initializing FontManager singleton...")
+		logger.InfoF("Initializing FontManager singleton...")
 
 		// Dependency check: Ensure ShaderManager is ready
 		sm := shaderManager.Get()
@@ -41,18 +42,16 @@ func InitFontManager() error {
 			return // Exit the anonymous function
 		}
 
-		// Dependency check: Ensure Config is ready
-		cfg := config.Get()
-		if cfg == nil {
-			initErr = fmt.Errorf("cannot initialize FontManager because Config is not initialized")
-			return
-		}
-
 		fm := &FontManager{
 			Fonts: make(map[string]*FontEntry),
 		}
 
-		fontPath := filepath.Join(cfg.AssetsDir, "fonts")
+		assetsDir, err := db.GetConfigValue("assets_dir")
+		if err != nil {
+			initErr = fmt.Errorf("could not get assets_dir from config: %w", err)
+			return
+		}
+		fontPath := filepath.Join(assetsDir, "fonts")
 		if err := fm.loadFonts(fontPath); err != nil {
 			initErr = fmt.Errorf("could not load fonts from '%s': %w", fontPath, err)
 			return
@@ -65,15 +64,15 @@ func InitFontManager() error {
 		if _, ok := fm.Fonts[baseFontForScramble]; ok {
 			if err := fm.CreateScrambledFont(baseFontForScramble, "Scrambled"); err != nil {
 				// This is not a fatal error for the whole application, so we just log it.
-				logger.LogWarningF("Could not create scrambled font: %v", err)
+				logger.WarningF("Could not create scrambled font: %v", err)
 			}
 		} else {
-			logger.LogWarningF("Base font '%s' for scrambling not found. Skipping scrambled font creation.", baseFontForScramble)
+			logger.WarningF("Base font '%s' for scrambling not found. Skipping scrambled font creation.", baseFontForScramble)
 		}
 		// --- END NEW ---
 
 		fontManagerInstance = fm
-		logger.LogInfo("FontManager initialized successfully.")
+		logger.InfoF("FontManager initialized successfully.")
 	})
 
 	// Return the error that might have been captured inside the sync.Once block.
@@ -122,7 +121,6 @@ type Glyph struct {
 
 // loadFonts scans the fonts directory, loads all .ttf/.otf files, and creates a font map for each.
 func (fm *FontManager) loadFonts(fontDir string) error {
-	config := config.Get()
 	files, err := os.ReadDir(fontDir)
 	if err != nil {
 		return fmt.Errorf("could not read font directory '%s': %w", fontDir, err)
@@ -132,15 +130,23 @@ func (fm *FontManager) loadFonts(fontDir string) error {
 		if file.IsDir() {
 			continue
 		}
-
 		fileName := file.Name()
 		if strings.HasSuffix(strings.ToLower(fileName), ".ttf") || strings.HasSuffix(strings.ToLower(fileName), ".otf") {
 			fontPath := filepath.Join(fontDir, fileName)
-			font, err := ttf.OpenFont(fontPath, int(config.BaseFontSize)) // Using a higher resolution for better quality
+			baseFontSizeStr, err := db.GetConfigValue("init_font_size")
 			if err != nil {
-				logger.LogInfoF("Warning: Could not load font '%s': %v\n", fontPath, err)
+				return fmt.Errorf("could not get standard_font_size from config: %w", err)
+			}
+			baseFontSize, err := strconv.Atoi(baseFontSizeStr)
+			if err != nil {
+				return fmt.Errorf("could not convert init_font_size to int: %w", err)
+			}
+			font, err := ttf.OpenFont(fontPath, baseFontSize) // Using a higher resolution for better quality
+			if err != nil {
+				logger.InfoF("Warning: Could not load font '%s': %v\n", fontPath, err)
 				continue
 			}
+
 			fontName := strings.TrimSuffix(fileName, filepath.Ext(fileName))
 			fm.Fonts[fontName] = &FontEntry{
 				Name: fontName,
@@ -160,7 +166,7 @@ func (fm *FontManager) loadFonts(fontDir string) error {
 }
 
 // CreateScrambledFont generates a new font entry by scrambling the glyphs of a base font.
-func (fm *FontManager) CreateScrambledFont(baseFontName, newFontName string) error {
+func (fm *FontManager) CreateScrambledFont(baseFontName string, newFontName string) error {
 	baseFont, ok := fm.Fonts[baseFontName]
 	if !ok {
 		return fmt.Errorf("base font '%s' not found", baseFontName)
@@ -177,7 +183,7 @@ func (fm *FontManager) CreateScrambledFont(baseFontName, newFontName string) err
 	}
 
 	fm.Fonts[newFontName] = scrambledFontEntry
-	logger.LogInfoF("Successfully created scrambled font '%s' from base '%s'\n", newFontName, baseFontName)
+	logger.InfoF("Successfully created scrambled font '%s' from base '%s'\n", newFontName, baseFontName)
 	return nil
 }
 
@@ -460,14 +466,14 @@ func (fm *FontManager) createFontMap(font *FontEntry, scramble bool, baseFont *F
 	for _, char := range chars {
 		tempGlyph, err := fm.createTempGlyph(fontToRenderFrom, char)
 		if err != nil {
-			logger.LogInfoF("Warning: could not create glyph for char '%c' in font %s: %v\n", char, font.Name, err)
+			logger.InfoF("Warning: could not create glyph for char '%c' in font %s: %v\n", char, font.Name, err)
 			continue
 		}
 
 		// --- NEW: Scramble the surface if requested ---
 		if scramble {
 			if err := fm.scrambleSurface(tempGlyph.surface, char); err != nil {
-				logger.LogWarningF("Could not scramble glyph for '%c': %v", char, err)
+				logger.WarningF("Could not scramble glyph for '%c': %v", char, err)
 				// We can continue, it will just use the unscrambled glyph
 			}
 		}
@@ -496,7 +502,7 @@ func (fm *FontManager) createFontMap(font *FontEntry, scramble bool, baseFont *F
 		dstRect := sdl.Rect{X: currentX, Y: 0, W: tempGlyph.surface.W, H: tempGlyph.surface.H}
 		if err := tempGlyph.surface.Blit(nil, atlasSurface, &dstRect); err != nil {
 			tempGlyph.surface.Free()
-			logger.LogInfoF("Warning: Failed to blit glyph '%c': %v\n", tempGlyph.Rune, err)
+			logger.InfoF("Warning: Failed to blit glyph '%c': %v\n", tempGlyph.Rune, err)
 			continue
 		}
 
