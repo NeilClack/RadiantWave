@@ -21,8 +21,17 @@ import (
 	"radiantwavetech.com/radiantwave/internal/shaderManager"
 )
 
+// Application configuration constants
+const (
+	targetFPS          = 60.0
+	volumeStepSize     = 16
+	networkMaxWait     = 25 * time.Second
+	networkStableTime  = 2 * time.Second
+	openGLMajorVersion = 3
+	openGLMinorVersion = 3
+)
+
 // Application holds the core state and dependencies for the application.
-// It no longer holds a direct reference to Config, using the singleton instead.
 type Application struct {
 	Window           *sdl.Window
 	ValidationReport *ValidationReport
@@ -34,7 +43,7 @@ type Application struct {
 // ValidationCheck defines the type for specific validation steps.
 type ValidationCheck int
 
-// Defines the set of checks the Validate method will perform.
+// Validation check types
 const (
 	EmailAddressCheck ValidationCheck = iota
 	LicenseKeyCheck
@@ -51,253 +60,360 @@ type CheckResult struct {
 // ValidationReport contains the results of all validation checks.
 type ValidationReport struct {
 	Checks   map[ValidationCheck]CheckResult
-	AllValid bool // A helper field, true only if all essential checks passed.
+	AllValid bool
 }
+
+// String returns the string representation of a ValidationCheck
+func (vc ValidationCheck) String() string {
+	names := map[ValidationCheck]string{
+		EmailAddressCheck:      "EmailAddressCheck",
+		LicenseKeyCheck:        "LicenseKeyCheck",
+		NetworkConnectionCheck: "NetworkConnectionCheck",
+		SubscriptionCheck:      "SubscriptionCheck",
+	}
+	if name, ok := names[vc]; ok {
+		return name
+	}
+	return "UnknownCheck"
+}
+
+// ----------------------------------------------------------------------------
+// Main Entry Point
+// ----------------------------------------------------------------------------
 
 // Run is the core application entry point.
 func Run() error {
-	// Initialize the application in the following order:
-	// 1. Load Configuration
-	// 1a. Initialize the Database
-	// 2. Logger
-	// 3. SDL & OpenGL
-	// 4. ShaderManager
-	// 5. FontManager
-	// 6. Configuration Validation
-	// 7. Music Mixer
-	// 8. Main Event Loop
-
-	// Initialize the Database
-	homeDir, err := os.UserHomeDir()
+	appDataDir, err := initializeApplicationDirectory()
 	if err != nil {
-		return fmt.Errorf("could not determine user home directory: %w", err)
-	}
-	dbPath := filepath.Join(homeDir, ".radiantwave", "data.db")
-
-	logger.InitLogger(filepath.Join(homeDir, ".radiantwave"))
-
-	err = db.InitDatabase(dbPath)
-	if err != nil {
-		return fmt.Errorf("failed to initialize database: %v", err)
+		return err
 	}
 
-	// Create the Application object without the Config field
+	logger.InitLogger(appDataDir)
+
+	if err := initializeDatabase(appDataDir); err != nil {
+		return err
+	}
+
 	app := &Application{}
 
-	// Initializing SDL systems
-	logger.Info("Initializing SDL systems")
-	if err := initializeSDL(); err != nil {
-		return fmt.Errorf("failed to initialize SDL: %v", err)
+	if err := app.initializeSDLAndOpenGL(); err != nil {
+		return err
 	}
-	defer ttf.Quit()
-	defer sdl.Quit()
+	defer app.cleanup()
 
-	displayMode, err := sdl.GetDisplayMode(0, 0)
-	if err != nil {
-		logger.ErrorF("failed to query diapay mode for display 0: %v", err)
-		return fmt.Errorf("failed to query diapay mode for display 0: %v", err)
+	if err := app.initializeManagers(); err != nil {
+		return err
 	}
-	logger.InfoF("Display mode: %dx%d", displayMode.W, displayMode.H)
-	if displayMode.W == 0 || displayMode.H == 0 {
-		return fmt.Errorf("invalid display mode dimensions: %dx%d", displayMode.W, displayMode.H)
+
+	if err := app.validate(); err != nil {
+		return fmt.Errorf("application validation failed: %w", err)
 	}
-	w, h := graphics.SetDisplayOrientation(displayMode.W, displayMode.H)
-	window, err := sdl.CreateWindow("Radiant Wave", sdl.WINDOWPOS_UNDEFINED, sdl.WINDOWPOS_UNDEFINED,
-		w, h, sdl.WINDOW_OPENGL|sdl.WINDOW_FULLSCREEN_DESKTOP|sdl.WINDOW_SHOWN)
+
+	if err := app.initializeAudio(); err != nil {
+		return err
+	}
+
+	if err := app.runEventLoop(); err != nil {
+		logger.ErrorF("Event loop exited with error: %v", err)
+		return err
+	}
+
+	return nil
+}
+
+// ----------------------------------------------------------------------------
+// Initialization Functions
+// ----------------------------------------------------------------------------
+
+// initializeApplicationDirectory creates and returns the application data directory path
+func initializeApplicationDirectory() (string, error) {
+	homeDir, err := os.UserHomeDir()
 	if err != nil {
-		return fmt.Errorf("failed to create window: %w", err)
+		return "", fmt.Errorf("could not determine user home directory: %w", err)
+	}
+	return filepath.Join(homeDir, ".radiantwave"), nil
+}
+
+// initializeDatabase sets up the database connection
+func initializeDatabase(appDataDir string) error {
+	dbPath := filepath.Join(appDataDir, "data.db")
+	if err := db.InitDatabase(dbPath); err != nil {
+		return fmt.Errorf("failed to initialize database: %w", err)
+	}
+	return nil
+}
+
+// initializeSDLAndOpenGL sets up SDL, TTF, and OpenGL
+func (app *Application) initializeSDLAndOpenGL() error {
+	logger.Info("Initializing SDL systems")
+
+	if err := initializeSDL(); err != nil {
+		return fmt.Errorf("SDL initialization failed: %w", err)
+	}
+
+	window, err := app.createWindow()
+	if err != nil {
+		return err
 	}
 	app.Window = window
-	defer window.Destroy()
 
-	glContext, err := window.GLCreateContext()
-	if err != nil {
-		return fmt.Errorf("failed to create OpenGL Context: %v", err)
+	if err := app.initializeOpenGL(); err != nil {
+		return err
 	}
-	defer sdl.GLDeleteContext(glContext)
+
+	app.initKeybinds()
+	return nil
+}
+
+// initializeSDL initializes SDL subsystems
+func initializeSDL() error {
+	if err := sdl.Init(sdl.INIT_VIDEO | sdl.INIT_AUDIO); err != nil {
+		logger.ErrorF("Failed to initialize SDL subsystems: %v", err)
+		return err
+	}
+	logger.Info("Successfully initialized VIDEO and AUDIO subsystems")
+	logger.InfoF("SDL audio backend: %s", sdl.GetCurrentAudioDriver())
+
+	if err := ttf.Init(); err != nil {
+		logger.ErrorF("Failed to initialize TTF: %v", err)
+		return fmt.Errorf("TTF initialization failed: %w", err)
+	}
+	logger.Info("Successfully initialized TTF")
+
+	sdl.GLSetAttribute(sdl.GL_CONTEXT_MAJOR_VERSION, openGLMajorVersion)
+	sdl.GLSetAttribute(sdl.GL_CONTEXT_MINOR_VERSION, openGLMinorVersion)
+	sdl.GLSetAttribute(sdl.GL_CONTEXT_PROFILE_MASK, sdl.GL_CONTEXT_PROFILE_CORE)
+	sdl.ShowCursor(sdl.DISABLE)
+	sdl.SetRelativeMouseMode(true)
+
+	return nil
+}
+
+// createWindow creates the SDL window with proper display mode detection
+func (app *Application) createWindow() (*sdl.Window, error) {
+	displayMode, err := sdl.GetDisplayMode(0, 0)
+	if err != nil {
+		logger.ErrorF("Failed to query display mode: %v", err)
+		return nil, fmt.Errorf("display mode query failed: %w", err)
+	}
+
+	logger.InfoF("Display mode: %dx%d", displayMode.W, displayMode.H)
+
+	if displayMode.W == 0 || displayMode.H == 0 {
+		return nil, fmt.Errorf("invalid display dimensions: %dx%d", displayMode.W, displayMode.H)
+	}
+
+	width, height := graphics.SetDisplayOrientation(displayMode.W, displayMode.H)
+
+	window, err := sdl.CreateWindow(
+		"Radiant Wave",
+		sdl.WINDOWPOS_UNDEFINED,
+		sdl.WINDOWPOS_UNDEFINED,
+		width,
+		height,
+		sdl.WINDOW_OPENGL|sdl.WINDOW_FULLSCREEN_DESKTOP|sdl.WINDOW_SHOWN,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("window creation failed: %w", err)
+	}
+
+	return window, nil
+}
+
+// initializeOpenGL sets up OpenGL context and logs version info
+func (app *Application) initializeOpenGL() error {
+	glContext, err := app.Window.GLCreateContext()
+	if err != nil {
+		return fmt.Errorf("OpenGL context creation failed: %w", err)
+	}
+	_ = glContext // Mark as intentionally unused
 
 	if err := sdl.GLSetSwapInterval(1); err != nil {
-		return fmt.Errorf("unable to enable vsync: %v", err)
+		return fmt.Errorf("failed to enable vsync: %w", err)
 	}
 
 	if err := gl.InitWithProcAddrFunc(sdl.GLGetProcAddress); err != nil {
-		return fmt.Errorf("failed to initialize go-gl function pointers: %v", err)
+		return fmt.Errorf("go-gl initialization failed: %w", err)
 	}
+
 	version := gl.GoStr(gl.GetString(gl.VERSION))
 	renderer := gl.GoStr(gl.GetString(gl.RENDERER))
 	logger.InfoF("OpenGL version: %s", version)
 	logger.InfoF("OpenGL renderer: %s", renderer)
-	logger.Info("SDL & OpenGL successfully initialized.")
-	app.initKeybinds()
+	logger.Info("SDL & OpenGL successfully initialized")
 
-	// Initialize the ShaderManager
-	if err := shaderManager.InitShaderManager(); err != nil {
-		return fmt.Errorf("failed to initialize ShaderManager in Application.Run(): %v", err)
-	}
-
-	// Initialize the FontManager
-	if err := fontManager.InitFontManager(); err != nil {
-		return fmt.Errorf("failed to initialize FontManager in Application.Run(): %v", err)
-	}
-
-	// Validate the application configuration
-	if err := app.Validate(); err != nil {
-		return fmt.Errorf("failed to complete application validation: %v", err)
-	}
-
-	// Initialize the Music Mixer
-	audioDevice, err := db.GetConfigValue("audio_device_name")
-	if err != nil {
-		return fmt.Errorf("failed to get audio device name from config: %v", err)
-	}
-	mixer.Init(audioDevice)
-
-	// Start the main application loop
-	if err := app.runEventLoop(); err != nil {
-		logger.ErrorF("The main event loop exited with an error: %v", err)
-		return err
-	}
-
-	app.Close()
 	return nil
 }
 
-// runEventLoop contains the main loop for the application.
-func (app *Application) runEventLoop() error {
-	var now uint64
-	FPS := 60.0
-	frameDelay := 1.0 / FPS
-	app.running = true
-
-	lastTime := time.Now()
-	pageStackLength := len(app.pageStack)
-	if pageStackLength == 0 {
-		logger.ErrorF("no initial page loaded, pageStack empty!")
-		return fmt.Errorf("no initial page loaded, pageStack empty")
-	} else {
-		logger.Info("Successfully initialized first page in pageStack")
+// initializeManagers initializes shader and font managers
+func (app *Application) initializeManagers() error {
+	if err := shaderManager.InitShaderManager(); err != nil {
+		return fmt.Errorf("ShaderManager initialization failed: %w", err)
 	}
 
+	if err := fontManager.InitFontManager(); err != nil {
+		return fmt.Errorf("FontManager initialization failed: %w", err)
+	}
+
+	return nil
+}
+
+// initializeAudio initializes the music mixer with configured audio device
+func (app *Application) initializeAudio() error {
+	audioDevice, err := db.GetConfigValue("audio_device_name")
+	if err != nil {
+		return fmt.Errorf("failed to get audio device name: %w", err)
+	}
+	mixer.Init(audioDevice)
+	return nil
+}
+
+// cleanup handles proper resource cleanup
+func (app *Application) cleanup() {
+	for _, p := range app.pageStack {
+		p.Destroy()
+	}
+	app.pageStack = nil
+
+	if app.Window != nil {
+		app.Window.Destroy()
+	}
+
+	ttf.Quit()
+	sdl.Quit()
+}
+
+// ----------------------------------------------------------------------------
+// Event Loop
+// ----------------------------------------------------------------------------
+
+// runEventLoop contains the main loop for the application.
+func (app *Application) runEventLoop() error {
+	if len(app.pageStack) == 0 {
+		return fmt.Errorf("no initial page loaded, pageStack empty")
+	}
+	logger.Info("Successfully initialized first page in pageStack")
+
+	const frameDelay = time.Second / targetFPS
+	app.running = true
+	lastTime := time.Now()
+
 	for app.running {
-		now = sdl.GetPerformanceCounter()
+		frameStart := time.Now()
 
-		for event := sdl.PollEvent(); event != nil; event = sdl.PollEvent() {
-			switch e := event.(type) {
-			case *sdl.QuitEvent:
-				app.running = false
-				continue
-			case *sdl.KeyboardEvent:
-				if e.Type == sdl.KEYDOWN && e.Repeat == 0 {
-					isCtrlPressed := (e.Keysym.Mod&sdl.KMOD_CTRL) != 0 || (e.Keysym.Mod&sdl.KMOD_GUI) != 0
-					if e.Keysym.Sym == sdl.K_c && isCtrlPressed {
-						logger.Info("User attemped to exit program!")
-						continue
-					}
-					keybinds.PerformAction(e)
-				}
-			}
-
-			// Always use the current top of the stack for event handling
-			if len(app.pageStack) > 0 {
-				if err := app.pageStack[len(app.pageStack)-1].HandleEvent(&event); err != nil {
-					logger.WarningF("Error handling event in page: %v", err)
-				}
-			}
-		}
-
+		app.handleEvents()
 		if !app.running {
 			break
 		}
 
-		currentTime := time.Now()
-		deltaTime := float32(currentTime.Sub(lastTime).Seconds())
-		lastTime = currentTime
+		deltaTime := float32(time.Since(lastTime).Seconds())
+		lastTime = time.Now()
 
-		// Always use the current top of the stack for updating
-		if len(app.pageStack) > 0 {
-			app.pageStack[len(app.pageStack)-1].Update(deltaTime)
-		}
-
-		gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
-		gl.ClearColor(0.0, 0.0, 0.0, 1.0) // Black background
-		if len(app.pageStack) > 0 {
-			app.pageStack[len(app.pageStack)-1].Render()
-		}
-
-		app.Window.GLSwap()
+		app.updateCurrentPage(deltaTime)
+		app.renderFrame()
 		app.applyPendingAction()
-		frameTime := sdl.GetPerformanceCounter() - now/sdl.GetPerformanceFrequency()
-		if float64(frameTime) < frameDelay {
-			sdl.Delay(uint32(frameDelay/float64(frameTime)) * 1000)
+
+		// More accurate frame timing
+		frameTime := time.Since(frameStart)
+		if frameTime < frameDelay {
+			time.Sleep(frameDelay - frameTime)
 		}
 	}
+
 	return nil
 }
 
-func (app *Application) initKeybinds() {
-	keybinds.Register(
-		sdl.K_F3,
-		sdl.KMOD_NONE,
-		func() {
-			app.PushPage(&page.Settings{})
-		},
-	)
+// handleEvents processes all pending SDL events
+func (app *Application) handleEvents() {
+	for event := sdl.PollEvent(); event != nil; event = sdl.PollEvent() {
+		switch e := event.(type) {
+		case *sdl.QuitEvent:
+			app.running = false
+			return
 
-	keybinds.Register(
-		sdl.K_F2,
-		sdl.KMOD_NONE,
-		func() {
-			app.PushPage(&page.ScrollerPage{})
-		},
-	)
+		case *sdl.KeyboardEvent:
+			if e.Type == sdl.KEYDOWN && e.Repeat == 0 {
+				// Check for Ctrl+C or Cmd+C
+				isCtrlPressed := (e.Keysym.Mod&sdl.KMOD_CTRL) != 0 || (e.Keysym.Mod&sdl.KMOD_GUI) != 0
+				if e.Keysym.Sym == sdl.K_c && isCtrlPressed {
+					logger.Info("User attempted to exit program")
+					continue
+				}
+				keybinds.PerformAction(e)
+			}
+		}
 
-	keybinds.Register(
-		sdl.K_F1,
-		sdl.KMOD_NONE,
-		func() {
-			app.UnwindToPage(&page.Welcome{})
-		},
-	)
-
-	keybinds.Register(
-		sdl.K_q,
-		sdl.KMOD_RCTRL,
-		func() {
-			app.Stop()
-		},
-	)
-
-	// Volume Up
-	keybinds.Register(
-		sdl.K_UP,
-		sdl.KMOD_SHIFT,
-		func() {
-			logger.InfoF("Increasing volume %d + 16", mixer.GetVolume128())
-			mixer.SetVolume128(16)
-		},
-	)
-
-	// Volume Down
-	keybinds.Register(
-		sdl.K_DOWN,
-		sdl.KMOD_SHIFT,
-		func() {
-			logger.InfoF("Decreasing volume %d - 16", mixer.GetVolume128())
-			mixer.SetVolume128(-16)
-		},
-	)
+		// Forward event to current page
+		if currentPage := app.currentPage(); currentPage != nil {
+			if err := currentPage.HandleEvent(&event); err != nil {
+				logger.WarningF("Error handling event in page: %v", err)
+			}
+		}
+	}
 }
 
+// updateCurrentPage updates the current page with delta time
+func (app *Application) updateCurrentPage(deltaTime float32) {
+	if currentPage := app.currentPage(); currentPage != nil {
+		currentPage.Update(deltaTime)
+	}
+}
+
+// renderFrame clears and renders the current frame
+func (app *Application) renderFrame() {
+	gl.ClearColor(0.0, 0.0, 0.0, 1.0)
+	gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
+
+	if currentPage := app.currentPage(); currentPage != nil {
+		currentPage.Render()
+	}
+
+	app.Window.GLSwap()
+}
+
+// ----------------------------------------------------------------------------
+// Keybind Registration
+// ----------------------------------------------------------------------------
+
+// initKeybinds registers all application-level keyboard shortcuts
+func (app *Application) initKeybinds() {
+	keybinds.Register(sdl.K_F3, sdl.KMOD_NONE, func() {
+		app.PushPage(&page.Settings{})
+	})
+
+	keybinds.Register(sdl.K_F2, sdl.KMOD_NONE, func() {
+		app.PushPage(&page.ScrollerPage{})
+	})
+
+	keybinds.Register(sdl.K_F1, sdl.KMOD_NONE, func() {
+		app.UnwindToPage(&page.Welcome{})
+	})
+
+	keybinds.Register(sdl.K_q, sdl.KMOD_RCTRL, func() {
+		app.Stop()
+	})
+
+	keybinds.Register(sdl.K_UP, sdl.KMOD_SHIFT, func() {
+		logger.InfoF("Increasing volume: %d + %d", mixer.GetVolume128(), volumeStepSize)
+		mixer.SetVolume128(volumeStepSize)
+	})
+
+	keybinds.Register(sdl.K_DOWN, sdl.KMOD_SHIFT, func() {
+		logger.InfoF("Decreasing volume: %d - %d", mixer.GetVolume128(), volumeStepSize)
+		mixer.SetVolume128(-volumeStepSize)
+	})
+}
+
+// Stop sets the running flag to false, triggering application shutdown
 func (app *Application) Stop() {
 	app.running = false
 }
 
 // ----------------------------------------------------------------------------
-// Page Management Logic
+// Page Management
 // ----------------------------------------------------------------------------
 
-// currentPage is a private helper method that gets the page at the top of the
-// stack without needing a dedicated field. It returns nil if the stack is empty.
+// currentPage returns the page at the top of the stack, or nil if empty
 func (app *Application) currentPage() page.Page {
 	if len(app.pageStack) == 0 {
 		return nil
@@ -305,59 +421,53 @@ func (app *Application) currentPage() page.Page {
 	return app.pageStack[len(app.pageStack)-1]
 }
 
-// applyPendingAction executes the scheduled page transition.
+// applyPendingAction executes the scheduled page transition
 func (app *Application) applyPendingAction() {
 	if app.pendingAction != nil {
 		app.pendingAction()
 		app.pendingAction = nil
-		// Removed: Do NOT call Init on the new top page here.
-		// Initialization is handled by schedulePush/Switch/Unwind.
-		// The runEventLoop will naturally pick up the new current page.
 	}
 }
 
-// schedulePush schedules a new page to be added to the top of the stack.
+// schedulePush schedules a new page to be added to the top of the stack
 func (app *Application) schedulePush(p page.Page) {
-	// Update the current pendingAction with a function that performs a "push" to the pageStack
 	app.pendingAction = func() {
-		// Initialize the new page and pass it the current app for configuration
 		if err := p.Init(app); err != nil {
-			// Log an error if Init fails
-			logger.ErrorF("Failed to initialize new page, aborting push: %v", err)
+			logger.ErrorF("Failed to initialize page, aborting push: %v", err)
 			return
 		}
-		// Get the current page at the end of the pageStack and check that it is not nil (pageStack is not empty)
+
 		if topPage := app.currentPage(); topPage != nil {
-			// If there is a page, destroy it
 			topPage.Destroy()
 		}
-		// Append the new page to the pageStack
+
 		app.pageStack = append(app.pageStack, p)
 		logger.InfoF("Pushed new page onto stack: %T", p)
 	}
 }
 
-// scheduleSwitch schedules the current page to be replaced by a new one.
+// scheduleSwitch schedules the current page to be replaced by a new one
 func (app *Application) scheduleSwitch(p page.Page) {
 	app.pendingAction = func() {
-		// Get the top page using the helper method and destroy it.
 		if topPage := app.currentPage(); topPage != nil {
 			topPage.Destroy()
 			app.pageStack = app.pageStack[:len(app.pageStack)-1]
 		}
-		// Push the new page.
+
 		if err := p.Init(app); err != nil {
-			logger.ErrorF("Failed to initialize new page, aborting switch: %v", err)
+			logger.ErrorF("Failed to initialize page, aborting switch: %v", err)
 			return
 		}
+
 		app.pageStack = append(app.pageStack, p)
-		logger.InfoF("Switched to new page: %s", p)
+		logger.InfoF("Switched to new page: %T", p)
 	}
 }
 
-// scheduleUnwind schedules the removal of all pages above a target page.
+// scheduleUnwind schedules the removal of all pages above a target page
 func (app *Application) scheduleUnwind(targetPage page.Page) {
 	app.pendingAction = func() {
+		// Search for the target page in the stack
 		foundIndex := -1
 		for i := len(app.pageStack) - 1; i >= 0; i-- {
 			if app.pageStack[i] == targetPage {
@@ -367,193 +477,200 @@ func (app *Application) scheduleUnwind(targetPage page.Page) {
 		}
 
 		if foundIndex != -1 {
+			// Destroy pages above the target
 			for i := len(app.pageStack) - 1; i > foundIndex; i-- {
 				app.pageStack[i].Destroy()
 			}
 			app.pageStack = app.pageStack[:foundIndex+1]
+			logger.InfoF("Unwound to existing page: %T", targetPage)
 		} else {
+			// Page not found, replace current with new instance
 			if topPage := app.currentPage(); topPage != nil {
 				topPage.Destroy()
 				app.pageStack = app.pageStack[:len(app.pageStack)-1]
 			}
+
 			if err := targetPage.Init(app); err != nil {
+				logger.ErrorF("Failed to initialize target page: %v", err)
 				return
 			}
+
 			app.pageStack = append(app.pageStack, targetPage)
+			logger.InfoF("Unwound to new page instance: %T", targetPage)
 		}
 	}
 }
 
-// --------------------------------------------------------
-// ApplicationInterface implementation
-// --------------------------------------------------------
+// ----------------------------------------------------------------------------
+// Public Page Navigation Interface
+// ----------------------------------------------------------------------------
 
-// PushPage adds a new page to the pageStack
-// Simple page switches should use SwitchPage instead of PushPage.
-// PushPage is not intended to switch pages, but to create a page 'history'
-func (app *Application) PushPage(p page.Page) { app.schedulePush(p) }
+// PushPage adds a new page to the pageStack.
+// Creates a page 'history' rather than a simple switch.
+func (app *Application) PushPage(p page.Page) {
+	app.schedulePush(p)
+}
 
-// SwitchPage switches the current pageStack with a single, new page
-// This is the method that should normally be called when switching pages.
-func (app *Application) SwitchPage(p page.Page) { app.scheduleSwitch(p) }
+// SwitchPage replaces the current page with a new one.
+// This is the standard method for page transitions.
+func (app *Application) SwitchPage(p page.Page) {
+	app.scheduleSwitch(p)
+}
 
-// UnwindToPage reduces the pageStack, no matter the length, back to a specific page.
-// Think of this function as the "back button" in a web browser, except that you get to
-// pick which page you return to along the stack.
-func (app *Application) UnwindToPage(p page.Page) { app.scheduleUnwind(p) }
+// UnwindToPage reduces the pageStack back to a specific page.
+// Like a "back button" but you choose the destination.
+func (app *Application) UnwindToPage(p page.Page) {
+	app.scheduleUnwind(p)
+}
 
-// PopPage pops the last page off of the stack
-// This is intended to be called from pages in a stack, since the page being viewed
-// will be the last page on the stack, therefore, itself.
+// PopPage removes the current page from the stack.
+// Typically called from within a page to close itself.
 func (app *Application) PopPage() {
 	app.pendingAction = func() {
 		if topPage := app.currentPage(); topPage != nil {
 			topPage.Destroy()
 			app.pageStack = app.pageStack[:len(app.pageStack)-1]
-			logger.Info("Popped page from stack.")
+			logger.Info("Popped page from stack")
 		}
 	}
 }
 
-// GetDrawableSize queries the current window for the current OpenGL Context Drawable Size
-// Typically results in the dimensions of the screen.
-func (app *Application) GetDrawableSize() (w int32, h int32) {
+// GetDrawableSize returns the current OpenGL drawable size (typically screen dimensions)
+func (app *Application) GetDrawableSize() (w, h int32) {
 	return app.Window.GLGetDrawableSize()
 }
 
 // ----------------------------------------------------------------------------
-// Other functions
+// Validation
 // ----------------------------------------------------------------------------
 
-// Close cleans up application resources for a clean exit
-func (app *Application) Close() {
-	for _, page := range app.pageStack {
-		page.Destroy()
-	}
-	app.pageStack = nil
-}
+// validate performs a series of checks to ensure the application is ready to run
+func (app *Application) validate() error {
+	logger.Info("Validating program state")
 
-// Validate performs a series of checks to ensure the application is ready to run.
-func (app *Application) Validate() error {
-	logger.InfoF("Validating program state")
 	report := &ValidationReport{
 		Checks:   make(map[ValidationCheck]CheckResult),
 		AllValid: true,
 	}
 
+	// Initialize welcome page as base
 	welcomePage := &page.Welcome{}
-	welcomePage.Init(app)
+	if err := welcomePage.Init(app); err != nil {
+		return fmt.Errorf("failed to initialize welcome page: %w", err)
+	}
 	app.pageStack = append(app.pageStack, welcomePage)
 
-	// Check if a network device is found, and if we are connected to a network with internet access
-	// Initialize manager once
-	netManager, err := network.New()
-	if err != nil {
-		return fmt.Errorf("failed to initialize network manager: %w", err)
-	}
-	defer func() {
-		logger.InfoF("Closing network manager.")
-		netManager.Close()
-	}()
+	// Validate network connectivity
+	isOnline := app.validateNetwork(report)
 
-	// Wait for NM to connect (or timeout). Tune these as you like.
-	const (
-		maxWait   = 25 * time.Second // total time budget at boot
-		stableFor = 2 * time.Second  // require "up" to be stable briefly
-	)
-
-	status, err := netManager.WaitForInternet(maxWait, stableFor)
-	if err != nil {
-		// Not fatal by itself; we still have a status to report below.
-		logger.InfoF("Network wait error: %v", err)
-	}
-
-	isOnline := (status.StatusCode == network.StatusEthernetConnectedInternetUp ||
-		status.StatusCode == network.StatusWifiConnectedInternetUp)
-
-	report.Checks[NetworkConnectionCheck] = CheckResult{isOnline, status.Message}
+	// If offline, push WiFi setup page
 	if !isOnline {
 		report.AllValid = false
-		wifiSetupPage := &page.WiFiSetupPage{}
-		wifiSetupPage.Init(app)
-		app.pageStack = append(app.pageStack, wifiSetupPage)
+		wifiPage := &page.WiFiSetupPage{}
+		if err := wifiPage.Init(app); err != nil {
+			return fmt.Errorf("failed to initialize WiFi setup page: %w", err)
+		}
+		app.pageStack = append(app.pageStack, wifiPage)
 	}
 
-	licenseKey, err := db.GetConfigValue("license_key")
-	if err != nil {
-		return fmt.Errorf("failed to get license key from config: %v", err)
-	}
-	if licenseKey == "" {
-		report.Checks[LicenseKeyCheck] = CheckResult{false, "License key is missing from config."}
-		report.AllValid = false
-		licenseKeyPage := &page.LicenseKeyPage{}
-		licenseKeyPage.Init(app)
-		app.pageStack = append(app.pageStack, licenseKeyPage)
-	} else {
-		report.Checks[LicenseKeyCheck] = CheckResult{true, "License key found."}
+	// Validate license key
+	if err := app.validateLicenseKey(report); err != nil {
+		return err
 	}
 
-	emailAddress, err := db.GetConfigValue("email_address")
-	if err != nil {
-		return fmt.Errorf("failed to get email address from config: %v", err)
-	}
-	if emailAddress == "" {
-		report.Checks[EmailAddressCheck] = CheckResult{false, "Email address is missing from config."}
-		report.AllValid = false
-		emailAddressPage := &page.EmailAddressPage{}
-		emailAddressPage.Init(app)
-		app.pageStack = append(app.pageStack, emailAddressPage)
-
-	} else {
-		report.Checks[EmailAddressCheck] = CheckResult{true, "Email address found."}
+	// Validate email address
+	if err := app.validateEmailAddress(report); err != nil {
+		return err
 	}
 
-	if report.AllValid {
-		report.Checks[SubscriptionCheck] = CheckResult{true, "Subscription status is valid (Simulated)."}
-	} else {
-		report.Checks[SubscriptionCheck] = CheckResult{false, "Skipped due to previous validation failures."}
-	}
+	// Check subscription status
+	app.validateSubscription(report)
+
+	// Log validation results
 	for checkType, result := range report.Checks {
-		logger.InfoF("Validation Report: %s : %s", checkType.String(), result.Message)
+		logger.InfoF("Validation: %s - %s", checkType.String(), result.Message)
 	}
+
 	app.ValidationReport = report
 	return nil
 }
 
-func (vc ValidationCheck) String() string {
-	switch vc {
-	case EmailAddressCheck:
-		return "EmailAddressCheck"
-	case LicenseKeyCheck:
-		return "LicenseKeyCheck"
-	case NetworkConnectionCheck:
-		return "NetworkConnectionCheck"
-	case SubscriptionCheck:
-		return "SubscriptionCheck"
-	default:
-		return "UnknownCheck"
+// validateNetwork checks network connectivity and returns online status
+func (app *Application) validateNetwork(report *ValidationReport) bool {
+	netManager, err := network.New()
+	if err != nil {
+		logger.ErrorF("Failed to initialize network manager: %v", err)
+		report.Checks[NetworkConnectionCheck] = CheckResult{false, "Network manager initialization failed"}
+		return false
 	}
+	defer func() {
+		logger.Info("Closing network manager")
+		netManager.Close()
+	}()
+
+	status, err := netManager.WaitForInternet(networkMaxWait, networkStableTime)
+	if err != nil {
+		logger.InfoF("Network wait error: %v", err)
+	}
+
+	isOnline := status.StatusCode == network.StatusEthernetConnectedInternetUp ||
+		status.StatusCode == network.StatusWifiConnectedInternetUp
+
+	report.Checks[NetworkConnectionCheck] = CheckResult{isOnline, status.Message}
+	return isOnline
 }
 
-func initializeSDL() error {
-	// os.Setenv("SDL_VIDEODRIVER", "kmsdrm") // This is done in the kiosk-session as ENV variables
-	if err := sdl.Init(sdl.INIT_VIDEO | sdl.INIT_AUDIO); err != nil {
-		logger.ErrorF("failed to initialize critical SDL subsystems: %v", err)
-		return err
+// validateLicenseKey checks for a valid license key in the config
+func (app *Application) validateLicenseKey(report *ValidationReport) error {
+	licenseKey, err := db.GetConfigValue("license_key")
+	if err != nil {
+		return fmt.Errorf("failed to get license key: %w", err)
 	}
-	logger.Info("Successfully initialized VIDEO and AUDIO subsystems")
-	logger.InfoF("SDL audio backend: %s", sdl.GetCurrentAudioDriver())
-	if err := ttf.Init(); err != nil {
-		logger.ErrorF("failed to initialize critical component TTF : %v", err)
-		return fmt.Errorf("failed to initialize critical component TTF : %v", err)
-	}
-	logger.Info("Successfully initialized TTF")
 
-	sdl.GLSetAttribute(sdl.GL_CONTEXT_MAJOR_VERSION, 3)
-	sdl.GLSetAttribute(sdl.GL_CONTEXT_MINOR_VERSION, 3)
-	sdl.GLSetAttribute(sdl.GL_CONTEXT_PROFILE_MASK, sdl.GL_CONTEXT_PROFILE_CORE)
-	sdl.ShowCursor(sdl.DISABLE)
-	sdl.SetRelativeMouseMode(true)
+	if licenseKey == "" {
+		report.Checks[LicenseKeyCheck] = CheckResult{false, "License key is missing"}
+		report.AllValid = false
+
+		licenseKeyPage := &page.LicenseKeyPage{}
+		if err := licenseKeyPage.Init(app); err != nil {
+			return fmt.Errorf("failed to initialize license key page: %w", err)
+		}
+		app.pageStack = append(app.pageStack, licenseKeyPage)
+	} else {
+		report.Checks[LicenseKeyCheck] = CheckResult{true, "License key found"}
+	}
 
 	return nil
+}
+
+// validateEmailAddress checks for a valid email address in the config
+func (app *Application) validateEmailAddress(report *ValidationReport) error {
+	emailAddress, err := db.GetConfigValue("email_address")
+	if err != nil {
+		return fmt.Errorf("failed to get email address: %w", err)
+	}
+
+	if emailAddress == "" {
+		report.Checks[EmailAddressCheck] = CheckResult{false, "Email address is missing"}
+		report.AllValid = false
+
+		emailPage := &page.EmailAddressPage{}
+		if err := emailPage.Init(app); err != nil {
+			return fmt.Errorf("failed to initialize email address page: %w", err)
+		}
+		app.pageStack = append(app.pageStack, emailPage)
+	} else {
+		report.Checks[EmailAddressCheck] = CheckResult{true, "Email address found"}
+	}
+
+	return nil
+}
+
+// validateSubscription checks subscription status (currently simulated)
+func (app *Application) validateSubscription(report *ValidationReport) {
+	if report.AllValid {
+		report.Checks[SubscriptionCheck] = CheckResult{true, "Subscription status is valid (Simulated)"}
+	} else {
+		report.Checks[SubscriptionCheck] = CheckResult{false, "Skipped due to previous validation failures"}
+	}
 }
