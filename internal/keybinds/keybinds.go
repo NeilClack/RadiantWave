@@ -3,7 +3,7 @@ package keybinds
 
 import (
 	"github.com/veandco/go-sdl2/sdl"
-	"radiantwavetech.com/radiant_wave/internal/logger"
+	"radiantwavetech.com/radiantwave/internal/logger"
 )
 
 // KeyCombo represents a combination of a key and it's active modifier.
@@ -21,7 +21,7 @@ func Register(k sdl.Keycode, m sdl.Keymod, action func()) {
 	newCombo := KeyCombo{k, mod}
 	_, ok := Binds[newCombo]
 	if ok {
-		logger.LogError("Unable to bind key combo, combo already exists")
+		logger.Error("Unable to bind key combo, combo already exists")
 	}
 	Binds[newCombo] = action
 }

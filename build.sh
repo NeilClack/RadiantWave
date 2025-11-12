@@ -117,8 +117,8 @@ REMOTE_LOCATION="/srv/radiantwave/basic/$RELEASE_TYPE/$SYSTEM_TYPE"
 # --- Build binary ---
 CGO_ENABLED=1 go build -trimpath -buildmode=pie \
   -ldflags="-s -w \
-    -X 'radiantwavetech.com/radiant_wave/internal/page.GitVersion=${TAG}' \
-    -X 'radiantwavetech.com/radiant_wave/internal/config.SystemType=${SYSTEM_TYPE}'" \
+    -X 'radiantwavetech.com/radiantwave/internal/page.GitVersion=${TAG}' \
+    -X 'radiantwavetech.com/radiantwave/internal/config.SystemType=${SYSTEM_TYPE}'" \
   -o radiantwave radiantwave.go
 
 # --- Package root ---
