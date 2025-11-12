@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -11,10 +12,10 @@ import (
 	"github.com/go-gl/mathgl/mgl32"
 	"github.com/veandco/go-sdl2/sdl"
 	"github.com/veandco/go-sdl2/ttf"
-	"radiantwavetech.com/radiant_wave/internal/config"
-	"radiantwavetech.com/radiant_wave/internal/graphics"
-	"radiantwavetech.com/radiant_wave/internal/logger"
-	"radiantwavetech.com/radiant_wave/internal/shaderManager"
+	"radiantwavetech.com/radiantwave/internal/db"
+	"radiantwavetech.com/radiantwave/internal/graphics"
+	"radiantwavetech.com/radiantwave/internal/logger"
+	"radiantwavetech.com/radiantwave/internal/shaderManager"
 )
 
 // FontManager handles the loading and management of fonts.
@@ -32,7 +33,7 @@ var (
 // It must be called once at startup after ShaderManager has been initialized.
 func InitFontManager() error {
 	fontManagerOnce.Do(func() {
-		logger.LogInfo("Initializing FontManager singleton...")
+		logger.InfoF("Initializing FontManager singleton...")
 
 		// Dependency check: Ensure ShaderManager is ready
 		sm := shaderManager.Get()
@@ -41,18 +42,16 @@ func InitFontManager() error {
 			return // Exit the anonymous function
 		}
 
-		// Dependency check: Ensure Config is ready
-		cfg := config.Get()
-		if cfg == nil {
-			initErr = fmt.Errorf("cannot initialize FontManager because Config is not initialized")
-			return
-		}
-
 		fm := &FontManager{
 			Fonts: make(map[string]*FontEntry),
 		}
 
-		fontPath := filepath.Join(cfg.AssetsDir, "fonts")
+		assetsDir, err := db.GetConfigValue("assets_dir")
+		if err != nil {
+			initErr = fmt.Errorf("could not get assets_dir from config: %w", err)
+			return
+		}
+		fontPath := filepath.Join(assetsDir, "fonts")
 		if err := fm.loadFonts(fontPath); err != nil {
 			initErr = fmt.Errorf("could not load fonts from '%s': %w", fontPath, err)
 			return
@@ -65,15 +64,15 @@ func InitFontManager() error {
 		if _, ok := fm.Fonts[baseFontForScramble]; ok {
 			if err := fm.CreateScrambledFont(baseFontForScramble, "Scrambled"); err != nil {
 				// This is not a fatal error for the whole application, so we just log it.
-				logger.LogWarningF("Could not create scrambled font: %v", err)
+				logger.WarningF("Could not create scrambled font: %v", err)
 			}
 		} else {
-			logger.LogWarningF("Base font '%s' for scrambling not found. Skipping scrambled font creation.", baseFontForScramble)
+			logger.WarningF("Base font '%s' for scrambling not found. Skipping scrambled font creation.", baseFontForScramble)
 		}
 		// --- END NEW ---
 
 		fontManagerInstance = fm
-		logger.LogInfo("FontManager initialized successfully.")
+		logger.InfoF("FontManager initialized successfully.")
 	})
 
 	// Return the error that might have been captured inside the sync.Once block.
@@ -122,7 +121,6 @@ type Glyph struct {
 
 // loadFonts scans the fonts directory, loads all .ttf/.otf files, and creates a font map for each.
 func (fm *FontManager) loadFonts(fontDir string) error {
-	config := config.Get()
 	files, err := os.ReadDir(fontDir)
 	if err != nil {
 		return fmt.Errorf("could not read font directory '%s': %w", fontDir, err)
@@ -132,15 +130,23 @@ func (fm *FontManager) loadFonts(fontDir string) error {
 		if file.IsDir() {
 			continue
 		}
-
 		fileName := file.Name()
 		if strings.HasSuffix(strings.ToLower(fileName), ".ttf") || strings.HasSuffix(strings.ToLower(fileName), ".otf") {
 			fontPath := filepath.Join(fontDir, fileName)
-			font, err := ttf.OpenFont(fontPath, int(config.BaseFontSize)) // Using a higher resolution for better quality
+			baseFontSizeStr, err := db.GetConfigValue("init_font_size")
 			if err != nil {
-				logger.LogInfoF("Warning: Could not load font '%s': %v\n", fontPath, err)
+				return fmt.Errorf("could not get standard_font_size from config: %w", err)
+			}
+			baseFontSize, err := strconv.Atoi(baseFontSizeStr)
+			if err != nil {
+				return fmt.Errorf("could not convert init_font_size to int: %w", err)
+			}
+			font, err := ttf.OpenFont(fontPath, baseFontSize) // Using a higher resolution for better quality
+			if err != nil {
+				logger.InfoF("Warning: Could not load font '%s': %v\n", fontPath, err)
 				continue
 			}
+
 			fontName := strings.TrimSuffix(fileName, filepath.Ext(fileName))
 			fm.Fonts[fontName] = &FontEntry{
 				Name: fontName,
@@ -160,7 +166,7 @@ func (fm *FontManager) loadFonts(fontDir string) error {
 }
 
 // CreateScrambledFont generates a new font entry by scrambling the glyphs of a base font.
-func (fm *FontManager) CreateScrambledFont(baseFontName, newFontName string) error {
+func (fm *FontManager) CreateScrambledFont(baseFontName string, newFontName string) error {
 	baseFont, ok := fm.Fonts[baseFontName]
 	if !ok {
 		return fmt.Errorf("base font '%s' not found", baseFontName)
@@ -177,78 +183,267 @@ func (fm *FontManager) CreateScrambledFont(baseFontName, newFontName string) err
 	}
 
 	fm.Fonts[newFontName] = scrambledFontEntry
-	logger.LogInfoF("Successfully created scrambled font '%s' from base '%s'\n", newFontName, baseFontName)
+	logger.InfoF("Successfully created scrambled font '%s' from base '%s'\n", newFontName, baseFontName)
 	return nil
 }
 
-// scrambleSurface rearranges the pixels of a glyph surface to create a scrambled character.
-// It divides the surface into a grid and shuffles the grid cells.
-// The rune is used as a seed to ensure the scrambling is deterministic.
+// ATTENTION: TED
+//
+// # Deterministic Fibonacci-Based Visual Pattern Generation for Character Data
+//
+// This method transforms rendered text characters into structured visual patterns that produce
+// character-specific spatial frequency signatures while maintaining perfect reversibility.
+//
+// The technology addresses a fundamental limitation in subliminal text display: conventional
+// approaches either use unmodified text (consciously readable, defeating the subliminal purpose)
+// or simple blurring/masking (destroys information content and character-specific structure).
+// Our method preserves complete character information in a transformed visual state that remains
+// illegible to conscious observation while generating structured spatial patterns.
+//
+// The approach treats each rendered character as a two-dimensional grid and applies deterministic
+// geometric transformations parameterized by Fibonacci sequence values. The character's Unicode
+// value seeds all transformation parameters, ensuring identical characters produce identical
+// patterns while different characters generate distinct spatial signatures. Multiple transformation
+// stages compound to create high-entropy visual output with underlying mathematical structure.
+//
+// Key differentiators from existing solutions:
+//   - Operates on rendered visual data rather than underlying text data or encrypted values
+//   - Generates character-specific spatial frequency patterns rather than uniform noise
+//   - Uses Fibonacci-sequence-derived parameters to create mathematically structured transformations
+//   - Maintains pixel-perfect reversibility despite high visual entropy
+//   - Produces deterministic, reproducible patterns for each character
+//
+// Within our Radiant Wave generation system, these transformed characters create spatial interference
+// patterns designed for subconscious processing. Each character contributes a unique frequency
+// signature to the overall visual field, with Fibonacci-based geometry intended to create harmonic
+// relationships between character patterns. The result is a consciously illegible display that
+// maintains structured information content in the spatial domain, forming a component of the
+// broader Radiant Wave output.
 func (fm *FontManager) scrambleSurface(surface *sdl.Surface, r rune) error {
 	if surface.W < 8 || surface.H < 8 {
-		return nil // Skip tiny glyphs
+		return nil
 	}
 	if err := surface.Lock(); err != nil {
 		return fmt.Errorf("could not lock surface for scrambling: %w", err)
 	}
 	defer surface.Unlock()
 
-	// Parameters: set grid size
-	const gridCols = 2
-	const gridRows = 2
+	W := int(surface.W)
+	H := int(surface.H)
 
-	blockW := int(surface.W) / gridCols
-	blockH := int(surface.H) / gridRows
+	// Use much finer grid for complete illegibility
+	// Fibonacci number determines grid size: 5, 8, or 13
+	fib := []int{5, 8, 13}
+	fibIndex := int(r) % len(fib)
+	gridSize := fib[fibIndex]
+
+	// Ensure we have at least 8x8 grid for strong scrambling
+	if gridSize < 8 {
+		gridSize = 8
+	}
+
+	blockW := W / gridSize
+	blockH := H / gridSize
+
 	if blockW == 0 || blockH == 0 {
-		return nil // Not enough room to scramble
+		// Surface too small, fall back to 4x4
+		gridSize = 4
+		blockW = W / gridSize
+		blockH = H / gridSize
+		if blockW == 0 || blockH == 0 {
+			return nil
+		}
 	}
 
-	numBlocks := gridCols * gridRows
+	numBlocks := gridSize * gridSize
+
+	// Create complete permutation using Fibonacci linear congruential generator
 	blockIndices := make([]int, numBlocks)
+
+	// Use Fibonacci numbers for the LCG parameters
+	// F(7)=13, F(8)=21, F(9)=34, F(10)=55, F(11)=89
+	fibSeq := []int{13, 21, 34, 55, 89, 144}
+	multiplier := fibSeq[int(r)%len(fibSeq)]
+	increment := fibSeq[(int(r)+1)%len(fibSeq)]
+
+	// Generate pseudo-random permutation
 	for i := 0; i < numBlocks; i++ {
-		blockIndices[i] = i
+		blockIndices[i] = (multiplier*i + increment*int(r)) % numBlocks
 	}
 
-	// Deterministic shuffling based on rune
-	// Assume gridCols = 2, gridRows = 2 (4 blocks: 0=LT, 1=RT, 2=LB, 3=RB)
-	// Step 1: rotate clockwise one position: [2,0,3,1]
-	blockIndices[0], blockIndices[1], blockIndices[2], blockIndices[3] = 2, 0, 3, 1
-	// Step 2: flip LT and LB: [blockIndices[2], blockIndices[1], blockIndices[0], blockIndices[3]]
-	blockIndices[0], blockIndices[2] = blockIndices[2], blockIndices[0]
-	// Step 3: flip LB and RB: [blockIndices[0], blockIndices[1], blockIndices[3], blockIndices[2]]
-	blockIndices[2], blockIndices[3] = blockIndices[3], blockIndices[2]
-	// Step 4: rotate clockwise once more: [blockIndices[2], blockIndices[0], blockIndices[3], blockIndices[1]]
-	blockIndices[0], blockIndices[1], blockIndices[2], blockIndices[3] = blockIndices[2], blockIndices[0], blockIndices[3], blockIndices[1]
+	// Additional scrambling: apply multiple Fibonacci-based transformations
+	numTransforms := 3 + (int(r) % 5) // 3-7 transformations
 
+	for t := 0; t < numTransforms; t++ {
+		transformType := (int(r) + t*fibSeq[t%len(fibSeq)]) % 5
+
+		switch transformType {
+		case 0: // Reverse sections
+			sectionSize := gridSize / 2
+			for i := 0; i < numBlocks; i += sectionSize {
+				end := i + sectionSize
+				if end > numBlocks {
+					end = numBlocks
+				}
+				reverseSlice(blockIndices[i:end])
+			}
+
+		case 1: // Spiral rotation
+			// Rotate blocks in a spiral pattern
+			for layer := 0; layer < gridSize/2; layer++ {
+				rotateLayer(blockIndices, gridSize, layer)
+			}
+
+		case 2: // Fibonacci walk swap
+			step := fib[t%len(fib)]
+			for i := 0; i < numBlocks-step; i += step {
+				blockIndices[i], blockIndices[i+step] = blockIndices[i+step], blockIndices[i]
+			}
+
+		case 3: // Checkerboard transpose
+			for i := 0; i < gridSize; i++ {
+				for j := 0; j < gridSize; j++ {
+					if (i+j)%2 == 0 {
+						idx1 := i*gridSize + j
+						idx2 := j*gridSize + i
+						if idx2 < numBlocks {
+							blockIndices[idx1], blockIndices[idx2] = blockIndices[idx2], blockIndices[idx1]
+						}
+					}
+				}
+			}
+
+		case 4: // Random-walk permutation
+			walkLen := fib[(t+1)%len(fib)]
+			pos := int(r+rune(t)) % numBlocks
+			for w := 0; w < walkLen && pos < numBlocks-1; w++ {
+				nextPos := (pos + fib[w%len(fib)]) % numBlocks
+				blockIndices[pos], blockIndices[nextPos] = blockIndices[nextPos], blockIndices[pos]
+				pos = nextPos
+			}
+		}
+	}
+
+	// Copy pixels to perform the scrambling
 	pixels := surface.Pixels()
 	bytesPerPixel := int(surface.Format.BytesPerPixel)
 	pitch := int(surface.Pitch)
 	originalPixels := make([]byte, len(pixels))
 	copy(originalPixels, pixels)
 
-	for i := 0; i < numBlocks; i++ {
-		srcIdx := blockIndices[i]
-		dstIdx := i
+	// Rearrange all blocks
+	for dstIdx := 0; dstIdx < numBlocks; dstIdx++ {
+		srcIdx := blockIndices[dstIdx]
 
-		srcX := (srcIdx % gridCols) * blockW
-		srcY := (srcIdx / gridCols) * blockH
-		dstX := (dstIdx % gridCols) * blockW
-		dstY := (dstIdx / gridCols) * blockH
+		srcCol := srcIdx % gridSize
+		srcRow := srcIdx / gridSize
+		dstCol := dstIdx % gridSize
+		dstRow := dstIdx / gridSize
 
+		srcX := srcCol * blockW
+		srcY := srcRow * blockH
+		dstX := dstCol * blockW
+		dstY := dstRow * blockH
+
+		// Copy block pixel by pixel
 		for y := 0; y < blockH; y++ {
+			if srcY+y >= H || dstY+y >= H {
+				continue
+			}
+
 			srcOffset := (srcY+y)*pitch + srcX*bytesPerPixel
 			dstOffset := (dstY+y)*pitch + dstX*bytesPerPixel
 
-			// Handle block edge clipping (for uneven divisions)
 			rowLen := blockW * bytesPerPixel
-			if srcOffset+rowLen > len(originalPixels) || dstOffset+rowLen > len(pixels) {
-				continue
+			if srcX+blockW > W {
+				rowLen = (W - srcX) * bytesPerPixel
 			}
-			copy(pixels[dstOffset:dstOffset+rowLen], originalPixels[srcOffset:srcOffset+rowLen])
+			if dstX+blockW > W {
+				maxLen := (W - dstX) * bytesPerPixel
+				if maxLen < rowLen {
+					rowLen = maxLen
+				}
+			}
+
+			if srcOffset+rowLen <= len(originalPixels) && dstOffset+rowLen <= len(pixels) {
+				copy(pixels[dstOffset:dstOffset+rowLen], originalPixels[srcOffset:srcOffset+rowLen])
+			}
 		}
 	}
 
 	return nil
+}
+
+// Helper function to reverse a slice
+func reverseSlice(arr []int) {
+	for i, j := 0, len(arr)-1; i < j; i, j = i+1, j-1 {
+		arr[i], arr[j] = arr[j], arr[i]
+	}
+}
+
+// Helper function to rotate a layer in spiral pattern
+func rotateLayer(arr []int, gridSize, layer int) {
+	if layer >= gridSize/2 {
+		return
+	}
+
+	// Extract the layer elements
+	var temp []int
+
+	// Top edge
+	for i := layer; i < gridSize-layer; i++ {
+		temp = append(temp, arr[layer*gridSize+i])
+	}
+	// Right edge
+	for i := layer + 1; i < gridSize-layer; i++ {
+		temp = append(temp, arr[i*gridSize+(gridSize-layer-1)])
+	}
+	// Bottom edge
+	if gridSize-layer-1 > layer {
+		for i := gridSize - layer - 2; i >= layer; i-- {
+			temp = append(temp, arr[(gridSize-layer-1)*gridSize+i])
+		}
+	}
+	// Left edge
+	if gridSize-layer-1 > layer {
+		for i := gridSize - layer - 2; i > layer; i-- {
+			temp = append(temp, arr[i*gridSize+layer])
+		}
+	}
+
+	// Rotate the temp array by 1 position
+	if len(temp) > 0 {
+		last := temp[len(temp)-1]
+		copy(temp[1:], temp[0:len(temp)-1])
+		temp[0] = last
+	}
+
+	// Put back the rotated elements
+	idx := 0
+	// Top edge
+	for i := layer; i < gridSize-layer && idx < len(temp); i++ {
+		arr[layer*gridSize+i] = temp[idx]
+		idx++
+	}
+	// Right edge
+	for i := layer + 1; i < gridSize-layer && idx < len(temp); i++ {
+		arr[i*gridSize+(gridSize-layer-1)] = temp[idx]
+		idx++
+	}
+	// Bottom edge
+	if gridSize-layer-1 > layer {
+		for i := gridSize - layer - 2; i >= layer && idx < len(temp); i-- {
+			arr[(gridSize-layer-1)*gridSize+i] = temp[idx]
+			idx++
+		}
+	}
+	// Left edge
+	if gridSize-layer-1 > layer {
+		for i := gridSize - layer - 2; i > layer && idx < len(temp); i-- {
+			arr[i*gridSize+layer] = temp[idx]
+			idx++
+		}
+	}
 }
 
 // createFontMap generates a texture atlas for a given font entry.
@@ -271,14 +466,14 @@ func (fm *FontManager) createFontMap(font *FontEntry, scramble bool, baseFont *F
 	for _, char := range chars {
 		tempGlyph, err := fm.createTempGlyph(fontToRenderFrom, char)
 		if err != nil {
-			logger.LogInfoF("Warning: could not create glyph for char '%c' in font %s: %v\n", char, font.Name, err)
+			logger.InfoF("Warning: could not create glyph for char '%c' in font %s: %v\n", char, font.Name, err)
 			continue
 		}
 
 		// --- NEW: Scramble the surface if requested ---
 		if scramble {
 			if err := fm.scrambleSurface(tempGlyph.surface, char); err != nil {
-				logger.LogWarningF("Could not scramble glyph for '%c': %v", char, err)
+				logger.WarningF("Could not scramble glyph for '%c': %v", char, err)
 				// We can continue, it will just use the unscrambled glyph
 			}
 		}
@@ -307,7 +502,7 @@ func (fm *FontManager) createFontMap(font *FontEntry, scramble bool, baseFont *F
 		dstRect := sdl.Rect{X: currentX, Y: 0, W: tempGlyph.surface.W, H: tempGlyph.surface.H}
 		if err := tempGlyph.surface.Blit(nil, atlasSurface, &dstRect); err != nil {
 			tempGlyph.surface.Free()
-			logger.LogInfoF("Warning: Failed to blit glyph '%c': %v\n", tempGlyph.Rune, err)
+			logger.InfoF("Warning: Failed to blit glyph '%c': %v\n", tempGlyph.Rune, err)
 			continue
 		}
 

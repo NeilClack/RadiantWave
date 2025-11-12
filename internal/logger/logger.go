@@ -9,8 +9,6 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
-
-	"radiantwavetech.com/radiant_wave/internal/config"
 )
 
 // Logger is configured to write log messages to multiple destinations.
@@ -27,12 +25,10 @@ var (
 )
 
 // InitLogger initializes the singleton Logger instance.
-// It must be called once at application startup before any calls to GetLogger.
+// It must be called once at application startup before any calls to Get.
 // It opens the specified log file and sets up a multi-writer to output
 // to both the file and standard error.
-func InitLogger() error {
-	config := config.Get()
-	logDir := config.LogDir
+func InitLogger(logDir string) error {
 	var err error
 	once.Do(func() {
 		logFilePath := filepath.Join(logDir, ".radiantwave.log")
@@ -44,10 +40,10 @@ func InitLogger() error {
 
 		// Create a multi-writer to log to both the file and the console (os.Stderr).
 		multiWriter := io.MultiWriter(file, os.Stderr)
-		l := log.New(multiWriter, "", 0) // The built-in logger handles timestamps and prefixes.
+		stdLogger := log.New(multiWriter, "", 0)
 
-		instance = &Logger{stdLogger: l, file: file}
-		instance.Infof("Logger initialized. Logging to %s", logFilePath)
+		instance = &Logger{stdLogger: stdLogger, file: file}
+		InfoF("Logger initialized. Logging to %s", logFilePath)
 	})
 	return err
 }
@@ -62,12 +58,13 @@ func Get() *Logger {
 }
 
 // Close closes the log file. It should be called when the logger is no longer needed,
-// typically with a defer statement in the main Run function.
-func (l *Logger) Close() {
+// typically with a defer statement in the main function.
+func (l *Logger) Close() error {
 	if l.file != nil {
-		l.Infof("Closing logger.")
-		l.file.Close()
+		InfoF("Closing logger.")
+		return l.file.Close()
 	}
+	return nil
 }
 
 // output is the internal method that formats and writes the log message.
@@ -78,57 +75,54 @@ func (l *Logger) output(level, format string, args ...any) {
 	l.stdLogger.Println(logEntry)
 }
 
-// Info logs a message with the INFO level.
-func (l *Logger) Info(message string) {
-	l.output("[DEPRECATED] INFO", message)
+// Debug logs a debug-level message
+func Debug(message string) {
+	Get().output("DEBUG", "%s", message)
 }
 
-func LogInfo(message string) {
-	instance.output("INFO", message)
+// DebugF logs a formatted debug-level message
+func DebugF(format string, args ...any) {
+	Get().output("DEBUG", format, args...)
 }
 
-// Infof logs a formatted message with the INFO level.
-func (l *Logger) Infof(format string, args ...any) {
-	l.output("[DEPRECATED] INFO", format, args...)
+// Info logs an info-level message
+func Info(message string) {
+	Get().output("INFO", "%s", message)
 }
 
-// LogInfoF is an attempt to create a function that does not require a logger pointer to utilize
-func LogInfoF(format string, args ...any) {
-	instance.output("INFO", format, args...)
+// InfoF logs a formatted info-level message
+func InfoF(format string, args ...any) {
+	Get().output("INFO", format, args...)
 }
 
-// Warning logs a message with the WARNING level.
-func (l *Logger) Warning(message string) {
-	l.output("[DEPRECATED] WARNING", message)
+// Warning logs a warning-level message
+func Warning(message string) {
+	Get().output("WARNING", "%s", message)
 }
 
-func LogWarning(message string) {
-	instance.output("WARNING", message)
+// WarningF logs a formatted warning-level message
+func WarningF(format string, args ...any) {
+	Get().output("WARNING", format, args...)
 }
 
-// Warningf logs a formatted message with the WARNING level.
-func (l *Logger) Warningf(format string, args ...any) {
-	l.output("[DEPRECATED] WARNING", format, args...)
+// Error logs an error-level message
+func Error(message string) {
+	Get().output("ERROR", "%s", message)
 }
 
-func LogWarningF(format string, args ...any) {
-	instance.output("WARNING", format, args...)
+// ErrorF logs a formatted error-level message
+func ErrorF(format string, args ...any) {
+	Get().output("ERROR", format, args...)
 }
 
-// Error logs a message with the ERROR level.
-func (l *Logger) Error(message string) {
-	l.output("[DEPRECATED] ERROR", message)
+// Fatal logs a fatal-level message and exits the program
+func Fatal(message string) {
+	Get().output("FATAL", "%s", message)
+	os.Exit(1)
 }
 
-func LogError(message string) {
-	instance.output("ERROR", message)
-}
-
-// Errorf logs a formatted message with the ERROR level.
-func (l *Logger) Errorf(format string, args ...any) {
-	l.output("[DEPRECATED] ERROR", format, args...)
-}
-
-func LogErrorF(format string, args ...any) {
-	instance.output("ERROR", format, args...)
+// FatalF logs a formatted fatal-level message and exits the program
+func FatalF(format string, args ...any) {
+	Get().output("FATAL", format, args...)
+	os.Exit(1)
 }

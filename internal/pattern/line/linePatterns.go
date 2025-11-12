@@ -3,7 +3,7 @@ package pattern
 import (
 	"fmt"
 
-	"radiantwavetech.com/radiant_wave/internal/fontManager"
+	"radiantwavetech.com/radiantwave/internal/fontManager"
 )
 
 type LinePattern interface {

@@ -51,3 +51,6 @@ assets/audio/*.wav
 VERSION
 pkgroot/
 build/
+
+# personal notes:
+notes.txt

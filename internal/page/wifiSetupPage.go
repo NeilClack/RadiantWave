@@ -2,6 +2,7 @@ package page
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -9,12 +10,12 @@ import (
 	"github.com/go-gl/mathgl/mgl32"
 	"github.com/godbus/dbus/v5"
 	"github.com/veandco/go-sdl2/sdl"
-	"radiantwavetech.com/radiant_wave/internal/colors"
-	"radiantwavetech.com/radiant_wave/internal/config"
-	"radiantwavetech.com/radiant_wave/internal/fontManager"
-	"radiantwavetech.com/radiant_wave/internal/logger"
-	"radiantwavetech.com/radiant_wave/internal/network"
-	"radiantwavetech.com/radiant_wave/internal/shaderManager"
+	"radiantwavetech.com/radiantwave/internal/colors"
+	"radiantwavetech.com/radiantwave/internal/db"
+	"radiantwavetech.com/radiantwave/internal/fontManager"
+	"radiantwavetech.com/radiantwave/internal/logger"
+	"radiantwavetech.com/radiantwave/internal/network"
+	"radiantwavetech.com/radiantwave/internal/shaderManager"
 )
 
 // accessPointUIItem holds both the network data and its rendered texture.
@@ -26,7 +27,6 @@ type accessPointUIItem struct {
 // WiFiSetupPage manages the discovery and connection to Wi-Fi networks.
 type WiFiSetupPage struct {
 	Base
-	config          *config.Config
 	networkManager  *network.Manager
 	applicationFont *fontManager.FontEntry
 
@@ -61,28 +61,35 @@ type WiFiSetupPage struct {
 
 // Init sets up the page, initializes the network manager, and starts a scan.
 func (p *WiFiSetupPage) Init(app ApplicationInterface) error {
-	logger.LogInfo("Initializing WiFiSetupPage")
-	p.config = config.Get()
+	logger.InfoF("Initializing WiFiSetupPage")
 
 	if err := p.Base.Init(app); err != nil {
 		return fmt.Errorf("failed base page initialization: %w", err)
 	}
 
+	// Get application font from database
+	applicationFontName, err := db.GetConfigValue("application_font")
+	if err != nil {
+		return fmt.Errorf("retrieving application_font from db: %w", err)
+	}
+
 	fm := fontManager.Get()
-	font, ok := fm.GetFont(p.config.ApplicationFont)
+	font, ok := fm.GetFont(applicationFontName)
 	if !ok {
-		return fmt.Errorf("could not find application font: %s", p.config.ApplicationFont)
+		return fmt.Errorf("could not find application font: %s", applicationFontName)
 	}
 	p.applicationFont = font
 
+	// Initialize network manager
 	nm, err := network.New()
 	if err != nil {
 		return fmt.Errorf("failed to initialize network manager: %w", err)
 	}
 	p.networkManager = nm
 
+	// Find Wi-Fi device
 	if err := p.networkManager.FindDevices(); err != nil {
-		logger.LogWarningF("Could not scan for network devices: %v", err)
+		logger.WarningF("Could not scan for network devices: %v", err)
 	}
 	for _, dev := range p.networkManager.Devices {
 		if dev.Type == network.TypeWifi {
@@ -92,6 +99,7 @@ func (p *WiFiSetupPage) Init(app ApplicationInterface) error {
 		}
 	}
 
+	// Create UI elements
 	white := sdl.Color{R: 255, G: 255, B: 255, A: 255}
 	p.titleItem, err = NewStringItem("Wi-Fi Setup", p.applicationFont, white)
 	if err != nil {
@@ -102,11 +110,13 @@ func (p *WiFiSetupPage) Init(app ApplicationInterface) error {
 		return fmt.Errorf("failed to create scanning status item: %w", err)
 	}
 
+	// Initialize channels
 	p.resultsChan = make(chan []network.AccessPoint)
 	p.statusChan = make(chan *network.ConnectionStatus, 1)
 	p.errorChan = make(chan error)
 	p.stopScan = make(chan struct{})
 
+	// Start scanning and status monitoring
 	p.startScan()
 	go p.checkConnectionStatusLoop()
 
@@ -115,7 +125,7 @@ func (p *WiFiSetupPage) Init(app ApplicationInterface) error {
 
 // checkConnectionStatusLoop periodically checks the network status.
 func (p *WiFiSetupPage) checkConnectionStatusLoop() {
-	ticker := time.NewTicker(5 * time.Second) // Check more frequently
+	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 
 	status, _ := p.networkManager.CheckInternetConnection()
@@ -171,12 +181,12 @@ func (p *WiFiSetupPage) HandleEvent(event *sdl.Event) error {
 func (p *WiFiSetupPage) handlePasswordInput(sym sdl.Keycode) {
 	switch sym {
 	case sdl.K_RETURN:
-		logger.LogInfoF("Attempting to connect to %s", p.selectedAP.SSID)
+		logger.InfoF("Attempting to connect to %s", p.selectedAP.SSID)
 		sdl.StopTextInput()
 		p.pendingSSID = p.selectedAP.SSID // Set pending state
 		err := p.networkManager.Connect(*p.wifiDevice, *p.selectedAP, p.passwordInput)
 		if err != nil {
-			logger.LogErrorF("Failed to send connect command: %v", err)
+			logger.ErrorF("Failed to send connect command: %v", err)
 			p.pendingSSID = "" // Clear pending state on immediate failure
 		}
 		p.isEnteringPassword = false
@@ -214,10 +224,10 @@ func (p *WiFiSetupPage) handleNetworkSelection(sym sdl.Keycode) {
 				p.updatePasswordPromptTexture()
 				sdl.StartTextInput()
 			} else {
-				logger.LogInfoF("Connecting to open network: %s", p.selectedAP.SSID)
+				logger.InfoF("Connecting to open network: %s", p.selectedAP.SSID)
 				err := p.networkManager.Connect(*p.wifiDevice, *p.selectedAP, "")
 				if err != nil {
-					logger.LogErrorF("Failed to send connect command: %v", err)
+					logger.ErrorF("Failed to send connect command: %v", err)
 					p.pendingSSID = "" // Clear pending state on immediate failure
 				}
 			}
@@ -240,7 +250,7 @@ func (p *WiFiSetupPage) Update(dt float32) error {
 		p.updateConnectionStatusItem()
 	case err := <-p.errorChan:
 		p.isScanning = false
-		logger.LogErrorF("Network scan error: %v", err)
+		logger.ErrorF("Network scan error: %v", err)
 	default:
 	}
 	return nil
@@ -263,7 +273,7 @@ func (p *WiFiSetupPage) updateConnectionStatusItem() {
 			}
 		}
 	case network.StatusWifiAvailableNotConnected, network.StatusEthernetNotConnected, network.StatusNoDevicesFound, network.StatusError:
-		// **HERE: We are explicitly disconnected. Clear the active and pending states.**
+		// We are explicitly disconnected. Clear the active and pending states.
 		p.activeSSID = ""
 		p.pendingSSID = ""
 	}
@@ -279,7 +289,6 @@ func (p *WiFiSetupPage) updateConnectionStatusItem() {
 		if err == nil {
 			p.connectionStatusItem = item
 		}
-
 	}
 }
 
@@ -338,7 +347,7 @@ func (p *WiFiSetupPage) buildNetworkUIList(aps []network.AccessPoint) {
 		}
 		item, err := NewStringItem(ssid, p.applicationFont, color)
 		if err != nil {
-			logger.LogWarningF("Could not create texture for SSID %s: %v", ap.SSID, err)
+			logger.WarningF("Could not create texture for SSID %s: %v", ap.SSID, err)
 			continue
 		}
 		p.accessPoints[i] = accessPointUIItem{AP: ap, Item: item}
@@ -374,40 +383,53 @@ func (p *WiFiSetupPage) updatePasswordPromptTexture() {
 
 // Render draws the entire page.
 func (p *WiFiSetupPage) Render() error {
+	// Get base font size from database
+	baseFontSizeStr, err := db.GetConfigValue("init_font_size")
+	if err != nil {
+		return fmt.Errorf("retrieving init_font_size from db: %w", err)
+	}
+	baseFontSize, err := strconv.ParseFloat(baseFontSizeStr, 32)
+	if err != nil {
+		return fmt.Errorf("parsing init_font_size: %w", err)
+	}
+
 	// Colors & Config
 	bgColor := sdl.Color{R: 40, G: 42, B: 54, A: 255}
 	selectionColor := sdl.Color{R: 68, G: 71, B: 90, A: 255}
 	white := sdl.Color{R: 255, G: 255, B: 255, A: 255}
-	baseFontSize := float32(p.config.BaseFontSize)
 	verticalMargin := float32(20)
 
 	solidShader, _ := shaderManager.Get().Get("solid_color")
 	textShader, _ := shaderManager.Get().Get("text")
 
+	// Background
 	p.Base.RenderSolidColorQuad(solidShader, mgl32.Vec2{0, 0}, mgl32.Vec2{float32(p.ScreenWidth), float32(p.ScreenHeight)}, bgColor)
 
-	titleScale := float32(48) / baseFontSize
+	// Title
+	titleScale := float32(48) / float32(baseFontSize)
 	titleW := float32(p.titleItem.W) * titleScale
 	titleH := float32(p.titleItem.H) * titleScale
 	titleX := float32(p.ScreenCenterX) - (titleW / 2)
 	titleY := float32(p.ScreenHeight) - titleH - 40
 	p.Base.RenderTexture(textShader, p.titleItem.ID, mgl32.Vec2{titleX, titleY}, mgl32.Vec2{titleW, titleH}, white)
 
+	// Status message
 	statusY := titleY - titleH - verticalMargin
 	if p.isScanning {
-		statusScale := float32(24) / baseFontSize
+		statusScale := float32(24) / float32(baseFontSize)
 		statusW := float32(p.scanningStatusItem.W) * statusScale
 		statusH := float32(p.scanningStatusItem.H) * statusScale
 		statusX := float32(p.ScreenCenterX) - (statusW / 2)
 		p.Base.RenderTexture(textShader, p.scanningStatusItem.ID, mgl32.Vec2{statusX, statusY}, mgl32.Vec2{statusW, statusH}, white)
 	} else if p.connectionStatusItem.ID != 0 {
-		statusScale := float32(24) / baseFontSize
+		statusScale := float32(24) / float32(baseFontSize)
 		statusW := float32(p.connectionStatusItem.W) * statusScale
 		statusH := float32(p.connectionStatusItem.H) * statusScale
 		statusX := float32(p.ScreenCenterX) - (statusW / 2)
 		p.Base.RenderTexture(textShader, p.connectionStatusItem.ID, mgl32.Vec2{statusX, statusY}, mgl32.Vec2{statusW, statusH}, p.connectionStatusItem.Color)
 	}
 
+	// Network list
 	listY := statusY - verticalMargin
 	if len(p.accessPoints) > 0 {
 		itemHeight := int32(40)
@@ -420,7 +442,7 @@ func (p *WiFiSetupPage) Render() error {
 				p.Base.RenderSolidColorQuad(solidShader, mgl32.Vec2{itemXpos, itemYpos}, mgl32.Vec2{itemW, float32(itemHeight)}, selectionColor)
 			}
 
-			textScale := float32(24) / baseFontSize
+			textScale := float32(24) / float32(baseFontSize)
 			textW := float32(apItem.Item.W) * textScale
 			textH := float32(apItem.Item.H) * textScale
 			textY := itemYpos + (float32(itemHeight) / 2) - (textH / 2)
@@ -429,28 +451,32 @@ func (p *WiFiSetupPage) Render() error {
 		}
 	}
 
+	// Password dialog overlay
 	if p.isEnteringPassword {
-		p.renderPasswordDialog(solidShader, textShader)
+		if err := p.renderPasswordDialog(solidShader, textShader, float32(baseFontSize)); err != nil {
+			return err
+		}
 	}
 
 	return nil
 }
 
 // renderPasswordDialog draws the password entry modal.
-func (p *WiFiSetupPage) renderPasswordDialog(solidShader, textShader *shaderManager.Shader) {
+func (p *WiFiSetupPage) renderPasswordDialog(solidShader, textShader *shaderManager.Shader, baseFontSize float32) error {
 	overlayColor := sdl.Color{R: 0, G: 0, B: 0, A: 150}
 	dialogBgColor := sdl.Color{R: 40, G: 42, B: 54, A: 255}
 	boxBorderColor := sdl.Color{R: 120, G: 120, B: 120, A: 255}
 	boxBgColor := sdl.Color{R: 30, G: 30, B: 30, A: 255}
 	white := sdl.Color{R: 255, G: 255, B: 255, A: 255}
-	baseFontSize := float32(p.config.BaseFontSize)
 
 	dialogW, dialogH := int32(600), int32(200)
 	dialogX, dialogY := p.ScreenCenterX-(dialogW/2), p.ScreenCenterY-(dialogH/2)
 
+	// Overlay and dialog background
 	p.Base.RenderSolidColorQuad(solidShader, mgl32.Vec2{0, 0}, mgl32.Vec2{float32(p.ScreenWidth), float32(p.ScreenHeight)}, overlayColor)
 	p.Base.RenderSolidColorQuad(solidShader, mgl32.Vec2{float32(dialogX), float32(dialogY)}, mgl32.Vec2{float32(dialogW), float32(dialogH)}, dialogBgColor)
 
+	// Password prompt
 	if p.passwordPromptItem.ID != 0 {
 		promptScale := float32(24) / baseFontSize
 		promptW := float32(p.passwordPromptItem.W) * promptScale
@@ -460,6 +486,7 @@ func (p *WiFiSetupPage) renderPasswordDialog(solidShader, textShader *shaderMana
 		p.Base.RenderTexture(textShader, p.passwordPromptItem.ID, mgl32.Vec2{promptX, promptY}, mgl32.Vec2{promptW, promptH}, white)
 	}
 
+	// Input box
 	padding, border := int32(4), int32(3)
 	boxW := int32(500)
 	targetFontSize := int32(36)
@@ -471,6 +498,7 @@ func (p *WiFiSetupPage) renderPasswordDialog(solidShader, textShader *shaderMana
 	p.Base.RenderSolidColorQuad(solidShader, mgl32.Vec2{float32(borderBoxX), float32(borderBoxY)}, mgl32.Vec2{float32(borderBoxW), float32(borderBoxH)}, boxBorderColor)
 	p.Base.RenderSolidColorQuad(solidShader, mgl32.Vec2{float32(boxX), float32(boxY)}, mgl32.Vec2{float32(boxW), float32(boxH)}, boxBgColor)
 
+	// Password input text
 	if p.passwordInputItem.ID != 0 {
 		inputScale := float32(targetFontSize) / baseFontSize
 		inputW := float32(p.passwordInputItem.W) * inputScale
@@ -479,11 +507,13 @@ func (p *WiFiSetupPage) renderPasswordDialog(solidShader, textShader *shaderMana
 		inputY := float32(boxY + padding)
 		p.Base.RenderTexture(textShader, p.passwordInputItem.ID, mgl32.Vec2{inputX, inputY}, mgl32.Vec2{inputW, inputH}, white)
 	}
+
+	return nil
 }
 
 // Destroy cleans up all resources used by the page.
 func (p *WiFiSetupPage) Destroy() error {
-	logger.LogInfo("Destroying WiFiSetupPage...")
+	logger.InfoF("Destroying WiFiSetupPage...")
 
 	if p.stopScan != nil {
 		close(p.stopScan)

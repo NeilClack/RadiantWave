@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"radiantwavetech.com/radiant_wave/internal/application"
+	"radiantwavetech.com/radiantwave/internal/application"
 )
 
 func main() {
