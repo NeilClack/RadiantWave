@@ -59,6 +59,7 @@ package page
 import (
 	"fmt"
 	"math"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -242,10 +243,15 @@ func (p *ScrollerPage) Init(app ApplicationInterface) error {
 	}
 
 	logger.InfoF("Starting audio playback")
+	assetsDir, err := db.GetConfigValue("assets_dir")
+	if err != nil {
+		return fmt.Errorf("retrieving assets_dir from db: %w", err)
+	}
+
 	if selectedAudio == "" {
 		logger.WarningF("No audio file selected, skipping audio playback")
 	} else {
-		if err := mixer.Play(selectedAudio, true); err != nil {
+		if err := mixer.Play(filepath.Join(assetsDir, selectedAudio), true); err != nil {
 			logger.ErrorF("mixer.Play error: %v", err)
 		}
 	}

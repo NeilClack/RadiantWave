@@ -80,7 +80,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed missing note texture cleanup in `Welcome` page Destroy method
 - Fixed logger level mismatches (warnings now use `WarningF`, errors use `ErrorF`)
 - Fixed slow program startup
-- Fixed resource cleanup order in application shutdown
+- Fixed resource cleanup order in application shutdown  
+- Fixed audio filepath in `Scroller`
 
 ---  
 
