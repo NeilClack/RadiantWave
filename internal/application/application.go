@@ -88,11 +88,15 @@ func Run() error {
 		return err
 	}
 
-	logger.InitLogger(appDataDir)
-
 	if err := initializeDatabase(appDataDir); err != nil {
 		return err
 	}
+
+	err = logger.InitLogger(db.DB)
+	if err != nil {
+		return fmt.Errorf("failed to initialize logger: %w", err)
+	}
+	defer logger.Get().Close()
 
 	app := &Application{}
 

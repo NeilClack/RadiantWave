@@ -3,6 +3,7 @@ package db
 import (
 	"log"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"gorm.io/driver/sqlite"
@@ -27,6 +28,13 @@ type Affirmations struct {
 	Available  bool
 }
 
+type LogEntry struct {
+	gorm.Model
+	Timestamp string
+	Level     string
+	Message   string
+}
+
 var defaultConfigValues = map[string]string{
 	"home_dir":            "",
 	"assets_dir":          "/usr/local/share/radiantwave",
@@ -47,13 +55,34 @@ var defaultConfigValues = map[string]string{
 // InitDatabase initializes the database connection
 // and performs auto-migration for all models
 func InitDatabase(dbpath string) error {
-	var err error
+	// Create the directory for the database if it doesn't exist
+	dbDir := filepath.Dir(dbpath)
+	if err := os.MkdirAll(dbDir, 0755); err != nil {
+		log.Printf("Error creating database directory %s: %v", dbDir, err)
+		return err
+	}
+
+	// Check if database file exists
+	_, err := os.Stat(dbpath)
+	dbExists := !os.IsNotExist(err)
+
+	if !dbExists {
+		log.Printf("Database file does not exist at %s, creating new database", dbpath)
+		// Create empty database file
+		file, err := os.Create(dbpath)
+		if err != nil {
+			log.Printf("Error creating database file: %v", err)
+			return err
+		}
+		file.Close()
+	}
+
 	DB, err = gorm.Open(sqlite.Open(dbpath), &gorm.Config{})
 	if err != nil {
 		return err
 	}
 	log.Println("Database connected successfully")
-	err = DB.AutoMigrate(&Config{}, &Affirmations{})
+	err = DB.AutoMigrate(&Config{}, &Affirmations{}, &LogEntry{})
 	if err != nil {
 		return err
 	}

@@ -1,22 +1,22 @@
-// Package logger provides a simple, singleton utility for logging to both a file and standard output.
+// Package logger provides a simple, singleton utility for logging to both the database and standard output.
 package logger
 
 import (
 	"fmt"
-	"io"
 	"log"
 	"os"
-	"path/filepath"
 	"sync"
 	"time"
+
+	"gorm.io/gorm"
 )
 
-// Logger is configured to write log messages to multiple destinations.
+// Logger is configured to write log messages to the database and console.
 type Logger struct {
-	// stdLogger holds the underlying standard library logger.
-	stdLogger *log.Logger
-	// file is a reference to the log file, kept so it can be closed.
-	file *os.File
+	// db holds the database connection for writing log entries
+	db *gorm.DB
+	// consoleLogger handles console output
+	consoleLogger *log.Logger
 }
 
 var (
@@ -26,24 +26,24 @@ var (
 
 // InitLogger initializes the singleton Logger instance.
 // It must be called once at application startup before any calls to Get.
-// It opens the specified log file and sets up a multi-writer to output
-// to both the file and standard error.
-func InitLogger(logDir string) error {
+// It accepts a gorm.DB instance for writing logs to the database.
+func InitLogger(db *gorm.DB) error {
 	var err error
 	once.Do(func() {
-		logFilePath := filepath.Join(logDir, ".radiantwave.log")
-		file, e := os.OpenFile(logFilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)
-		if e != nil {
-			err = fmt.Errorf("failed to open log file %s: %w", logFilePath, e)
+		if db == nil {
+			err = fmt.Errorf("database connection cannot be nil")
 			return
 		}
 
-		// Create a multi-writer to log to both the file and the console (os.Stderr).
-		multiWriter := io.MultiWriter(file, os.Stderr)
-		stdLogger := log.New(multiWriter, "", 0)
+		// Create console logger for stderr output
+		consoleLogger := log.New(os.Stderr, "", 0)
 
-		instance = &Logger{stdLogger: stdLogger, file: file}
-		InfoF("Logger initialized. Logging to %s", logFilePath)
+		instance = &Logger{
+			db:            db,
+			consoleLogger: consoleLogger,
+		}
+
+		InfoF("Logger initialized with database backend")
 	})
 	return err
 }
@@ -57,22 +57,48 @@ func Get() *Logger {
 	return instance
 }
 
-// Close closes the log file. It should be called when the logger is no longer needed,
-// typically with a defer statement in the main function.
+// Close is now a no-op since we're using the database connection
+// which is managed separately. Kept for backward compatibility.
 func (l *Logger) Close() error {
-	if l.file != nil {
-		InfoF("Closing logger.")
-		return l.file.Close()
-	}
+	InfoF("Logger closed")
 	return nil
 }
 
-// output is the internal method that formats and writes the log message.
+// LogEntry represents a log entry in the database
+// This mirrors the db.LogEntry struct to avoid circular imports
+type LogEntry struct {
+	Timestamp string
+	Level     string
+	Message   string
+}
+
+// output is the internal method that formats, writes to console, and saves to database.
 func (l *Logger) output(level, format string, args ...any) {
 	message := fmt.Sprintf(format, args...)
-	timestamp := time.Now().Format("2006-01-02 15:04:05")
-	logEntry := fmt.Sprintf("%s [%s] %s", timestamp, level, message)
-	l.stdLogger.Println(logEntry)
+	timestamp := time.Now()
+
+	// Format timestamp with milliseconds: 2006-01-02 15:04:05.000
+	timestampStr := timestamp.Format("2006-01-02 15:04:05.000")
+
+	// Format for console output
+	logLine := fmt.Sprintf("%s [%s] %s", timestampStr, level, message)
+	l.consoleLogger.Println(logLine)
+
+	// Write to database asynchronously to avoid blocking
+	go func() {
+		entry := map[string]interface{}{
+			"timestamp": timestampStr,
+			"level":     level,
+			"message":   message,
+		}
+
+		// Use Table() to avoid needing to import db package
+		if err := l.db.Table("log_entries").Create(entry).Error; err != nil {
+			// Log database errors to console only to avoid infinite recursion
+			l.consoleLogger.Printf("%s [ERROR] Failed to write log to database: %v\n",
+				time.Now().Format("2006-01-02 15:04:05.000"), err)
+		}
+	}()
 }
 
 // Debug logs a debug-level message
@@ -118,11 +144,15 @@ func ErrorF(format string, args ...any) {
 // Fatal logs a fatal-level message and exits the program
 func Fatal(message string) {
 	Get().output("FATAL", "%s", message)
+	// Give goroutine a moment to write to database before exiting
+	time.Sleep(100 * time.Millisecond)
 	os.Exit(1)
 }
 
 // FatalF logs a formatted fatal-level message and exits the program
 func FatalF(format string, args ...any) {
 	Get().output("FATAL", format, args...)
+	// Give goroutine a moment to write to database before exiting
+	time.Sleep(100 * time.Millisecond)
 	os.Exit(1)
 }
