@@ -176,11 +176,14 @@ func seedDefaultAffirmations() error {
 			// Extract title from filename (remove .txt extension)
 			title := strings.TrimSuffix(file.Name(), ".txt")
 
+			// Select "Relaxation" as the default affirmation
+			isSelected := (title == "Relaxation")
+
 			affirmation := Affirmations{
 				Title:      title,
 				Content:    string(content),
 				Commercial: isCommercial,
-				Selected:   false,
+				Selected:   isSelected,
 				Favorite:   false,
 				Available:  true,
 			}
@@ -189,6 +192,11 @@ func seedDefaultAffirmations() error {
 				log.Printf("Error creating affirmation from %s: %v", file.Name(), err)
 				return err
 			}
+
+			if isSelected {
+				log.Printf("Set default affirmation: %s", title)
+			}
+
 			totalSeeded++
 		}
 	}
