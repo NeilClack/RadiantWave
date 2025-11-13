@@ -13,7 +13,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 ### Fixed  
 ### Security
+---   
 
+## [v0.1.1]
+
+### Added  
+- Settings menu options for editing email address and license key
+- Current email address and license key display on their respective configuration pages
+- License information display on welcome page (email address and license key)
+- Automatic dash formatting for license key input (XXXX-XXXX-XXXX-XXXX format)
+- Database logging support for application logs
+
+### Changed  
+- Improved WiFi configuration page user experience
+- Updated WiFi page background color
+- Enhanced affirmation selection user interface
+
+### Fixed 
+- Database configuration values not saving due to UNIQUE constraint conflict in `SetConfigValue` function
+
+### Deprecated  
+### Removed  
+### Security
 --- 
 
 ## [v0.1.0]  

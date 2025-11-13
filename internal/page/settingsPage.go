@@ -98,6 +98,24 @@ func (p *Settings) Init(app ApplicationInterface) error {
 		label: audioLabel,
 	})
 
+	emailLabel, err := NewStringItem("Email Address", font, colors.White)
+	if err != nil {
+		return fmt.Errorf("creating email label: %w", err)
+	}
+	p.options = append(p.options, Option{
+		page:  &EmailAddressPage{},
+		label: emailLabel,
+	})
+
+	licenseKeyLabel, err := NewStringItem("License Key", font, colors.White)
+	if err != nil {
+		return fmt.Errorf("creating license key label: %w", err)
+	}
+	p.options = append(p.options, Option{
+		page:  &LicenseKeyPage{},
+		label: licenseKeyLabel,
+	})
+
 	// Get base font size from database
 	baseFontSizeStr, err := db.GetConfigValue("init_font_size")
 	if err != nil {

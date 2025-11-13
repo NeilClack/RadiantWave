@@ -21,6 +21,10 @@ type EmailAddressPage struct {
 	titleTextureWidth  int32
 	titleTextureHeight int32
 
+	currentEmailDisplayTextureID     uint32
+	currentEmailDisplayTextureWidth  int32
+	currentEmailDisplayTextureHeight int32
+
 	inputText              string
 	inputTextTextureID     uint32
 	inputTextTextureWidth  int32
@@ -58,7 +62,6 @@ func (p *EmailAddressPage) Init(app ApplicationInterface) error {
 		return fmt.Errorf("CreateStringTexture returned a nil texture ID")
 	}
 
-	logger.InfoF("Created title texture %d", titleTextureID)
 	p.titleTextureID = titleTextureID
 	p.titleTextureWidth = titleWidth
 	p.titleTextureHeight = titleHeight
@@ -71,6 +74,21 @@ func (p *EmailAddressPage) Init(app ApplicationInterface) error {
 
 	if emailAddress != "" {
 		p.inputText = emailAddress
+
+		// Create current email display texture
+		currentEmailText := fmt.Sprintf("Current Email: %s", emailAddress)
+		currentEmailTextureID, currentEmailWidth, currentEmailHeight, err := fm.CreateStringTexture(applicationFont, currentEmailText, textShader)
+		if err != nil {
+			return fmt.Errorf("failed to create current email display texture: %w", err)
+		}
+		if currentEmailTextureID == 0 {
+			return fmt.Errorf("CreateStringTexture returned a nil texture ID for current email display")
+		}
+
+		logger.InfoF("Created current email display texture %d", currentEmailTextureID)
+		p.currentEmailDisplayTextureID = currentEmailTextureID
+		p.currentEmailDisplayTextureWidth = currentEmailWidth
+		p.currentEmailDisplayTextureHeight = currentEmailHeight
 	} else {
 		p.inputText = ""
 	}
@@ -176,6 +194,8 @@ func (p *EmailAddressPage) Render() error {
 	// 1. Calculate Scale
 	titleFontSize := int32(64)
 	titleScale := float32(titleFontSize) / float32(baseFontSize)
+	currentEmailFontSize := int32(28)
+	currentEmailScale := float32(currentEmailFontSize) / float32(baseFontSize)
 	padding := int32(4)
 	verticalMargin := int32(20)
 
@@ -196,6 +216,14 @@ func (p *EmailAddressPage) Render() error {
 	inputTextW := float32(p.inputTextTextureWidth) * scale
 	inputTextDimensions := mgl32.Vec2{inputTextW, inputTextH}
 
+	var currentEmailDisplayH, currentEmailDisplayW float32
+	var currentEmailDisplayDimensions mgl32.Vec2
+	if p.currentEmailDisplayTextureID != 0 {
+		currentEmailDisplayH = float32(p.currentEmailDisplayTextureHeight) * currentEmailScale
+		currentEmailDisplayW = float32(p.currentEmailDisplayTextureWidth) * currentEmailScale
+		currentEmailDisplayDimensions = mgl32.Vec2{currentEmailDisplayW, currentEmailDisplayH}
+	}
+
 	// 3. Define positions
 	borderBoxY := p.Base.ScreenCenterY - (borderBoxH / 2)
 	borderBoxX := p.Base.ScreenCenterX - (borderBoxW / 2)
@@ -210,6 +238,13 @@ func (p *EmailAddressPage) Render() error {
 	inputTextX := boxX + padding
 	inputTextPosition := mgl32.Vec2{float32(inputTextX), float32(inputTextY)}
 
+	var currentEmailDisplayPosition mgl32.Vec2
+	if p.currentEmailDisplayTextureID != 0 {
+		currentEmailDisplayY := borderBoxY - int32(currentEmailDisplayH) - verticalMargin
+		currentEmailDisplayX := p.Base.ScreenCenterX - int32(currentEmailDisplayW/2)
+		currentEmailDisplayPosition = mgl32.Vec2{float32(currentEmailDisplayX), float32(currentEmailDisplayY)}
+	}
+
 	// 4. Define Colors
 	white := sdl.Color{R: 255, G: 255, B: 255, A: 255}
 	grey := sdl.Color{R: 120, G: 120, B: 120, A: 255}
@@ -223,8 +258,13 @@ func (p *EmailAddressPage) Render() error {
 	p.Base.RenderSolidColorQuad(solidShader, borderBoxPosition, borderBoxDimensions, grey)
 	p.Base.RenderSolidColorQuad(solidShader, boxPosition, boxDimensions, darkGrey)
 	p.Base.RenderTexture(textShader, p.titleTextureID, titlePosition, titleDimensions, white)
+
+	// Draw current email display if it exists
+	if p.currentEmailDisplayTextureID != 0 {
+		p.Base.RenderTexture(textShader, p.currentEmailDisplayTextureID, currentEmailDisplayPosition, currentEmailDisplayDimensions, white)
+	}
+
 	if len(p.inputText) > 0 {
-		logger.InfoF("inputTextTextureID: %d", p.inputTextTextureID)
 		p.Base.RenderTexture(textShader, p.inputTextTextureID, inputTextPosition, inputTextDimensions, white)
 	}
 	return nil
@@ -233,6 +273,14 @@ func (p *EmailAddressPage) Render() error {
 // Destroy cleans up page-specific resources.
 func (p *EmailAddressPage) Destroy() error {
 	logger.InfoF("Destroying EmailAddressPage...")
+
+	gl.DeleteTextures(1, &p.titleTextureID)
+
+	// Delete current email display texture if it exists
+	if p.currentEmailDisplayTextureID != 0 {
+		gl.DeleteTextures(1, &p.currentEmailDisplayTextureID)
+		p.currentEmailDisplayTextureID = 0
+	}
 
 	// Delete input text texture if it exists
 	if p.inputTextTextureID != 0 {

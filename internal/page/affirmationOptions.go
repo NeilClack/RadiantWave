@@ -9,6 +9,7 @@ import (
 	"radiantwavetech.com/radiantwave/internal/colors"
 	"radiantwavetech.com/radiantwave/internal/db"
 	"radiantwavetech.com/radiantwave/internal/fontManager"
+	"radiantwavetech.com/radiantwave/internal/logger"
 	"radiantwavetech.com/radiantwave/internal/shaderManager"
 )
 
@@ -79,7 +80,7 @@ func (p *AffirmationOptions) Init(app ApplicationInterface) error {
 	p.title.Scale(titleScale)
 
 	// Create prompt
-	p.prompt, err = NewStringItem("Use Arrow Keys to select, Space to toggle, Enter to confirm", p.font, colors.White)
+	p.prompt, err = NewStringItem("Arrow Keys to navigate | Space to toggle | F2 to run | Enter to return", p.font, colors.White)
 	if err != nil {
 		return fmt.Errorf("creating prompt: %w", err)
 	}
@@ -160,45 +161,42 @@ func (p *AffirmationOptions) HandleEvent(event *sdl.Event) error {
 			} else {
 				p.activeMap[p.highlightIndex] = true
 			}
-		case sdl.K_RETURN:
-			// Save selections to database and return to settings
-			if err := p.saveSelections(); err != nil {
-				return fmt.Errorf("failed to save affirmation selections: %w", err)
+
+			// Immediately save to database
+			if err := p.toggleAffirmation(p.highlightIndex); err != nil {
+				logger.ErrorF("Failed to toggle affirmation: %v", err)
+				return fmt.Errorf("failed to toggle affirmation: %w", err)
 			}
+		case sdl.K_RETURN:
+			// Just return to settings - no saving needed
 			p.App.UnwindToPage(&Settings{})
 		}
 	}
 	return nil
 }
 
-// saveSelections updates the Selected field for all affirmations in the database
-func (p *AffirmationOptions) saveSelections() error {
-	// Build a map of which database IDs should be selected
-	selectedIDs := make(map[uint]bool)
-	for displayIndex := range p.activeMap {
-		if displayIndex < len(p.affirmationIDs) {
-			dbID := p.affirmationIDs[displayIndex]
-			selectedIDs[dbID] = true
-		}
+// toggleAffirmation immediately updates the database for the affirmation at the given display index
+func (p *AffirmationOptions) toggleAffirmation(displayIndex int) error {
+	if displayIndex < 0 || displayIndex >= len(p.affirmationIDs) {
+		return fmt.Errorf("invalid display index %d", displayIndex)
 	}
 
-	// Get all affirmations from database
-	affirmations, err := db.GetAffirmations()
-	if err != nil {
-		return fmt.Errorf("retrieving affirmations from db: %w", err)
+	dbID := p.affirmationIDs[displayIndex]
+	isSelected := p.activeMap[displayIndex]
+
+	// Get the affirmation from database
+	var affirmation db.Affirmations
+	if err := db.DB.First(&affirmation, dbID).Error; err != nil {
+		return fmt.Errorf("retrieving affirmation %d: %w", dbID, err)
 	}
 
-	// Update each affirmation's Selected field if it changed
-	for _, affirmation := range affirmations {
-		shouldBeSelected := selectedIDs[affirmation.ID]
-		if affirmation.Selected != shouldBeSelected {
-			affirmation.Selected = shouldBeSelected
-			if err := db.DB.Save(&affirmation).Error; err != nil {
-				return fmt.Errorf("updating affirmation %d: %w", affirmation.ID, err)
-			}
-		}
+	// Update the Selected field
+	affirmation.Selected = isSelected
+	if err := db.DB.Save(&affirmation).Error; err != nil {
+		return fmt.Errorf("updating affirmation %d: %w", dbID, err)
 	}
 
+	logger.InfoF("Affirmation '%s' set to Selected=%v", affirmation.Title, isSelected)
 	return nil
 }
 

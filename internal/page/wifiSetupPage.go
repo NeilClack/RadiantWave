@@ -36,6 +36,7 @@ type WiFiSetupPage struct {
 	connectionStatusItem StringItem
 	passwordPromptItem   StringItem
 	passwordInputItem    StringItem
+	passwordErrorItem    StringItem
 
 	// Network list and selection
 	accessPoints  []accessPointUIItem
@@ -43,14 +44,18 @@ type WiFiSetupPage struct {
 	scrollOffset  int
 
 	// State management
-	isScanning         bool
-	isEnteringPassword bool
-	passwordInput      string
-	selectedAP         *network.AccessPoint
-	wifiDevice         *network.Device
-	connectionStatus   *network.ConnectionStatus
-	activeSSID         string // Tracks the CONFIRMED active network
-	pendingSSID        string // Tracks the network we are TRYING to connect to
+	isScanning            bool
+	isEnteringPassword    bool
+	isConnecting          bool
+	connectionError       string
+	passwordInput         string
+	selectedAP            *network.AccessPoint
+	wifiDevice            *network.Device
+	connectionStatus      *network.ConnectionStatus
+	activeSSID            string // Tracks the CONFIRMED active network
+	pendingSSID           string // Tracks the network we are TRYING to connect to
+	connectionAttemptTime time.Time
+	connectionTimeout     time.Duration
 
 	// Async management
 	resultsChan chan []network.AccessPoint
@@ -110,11 +115,12 @@ func (p *WiFiSetupPage) Init(app ApplicationInterface) error {
 		return fmt.Errorf("failed to create scanning status item: %w", err)
 	}
 
-	// Initialize channels
+	// Initialize channels and timeout
 	p.resultsChan = make(chan []network.AccessPoint)
 	p.statusChan = make(chan *network.ConnectionStatus, 1)
 	p.errorChan = make(chan error)
 	p.stopScan = make(chan struct{})
+	p.connectionTimeout = 15 * time.Second
 
 	// Start scanning and status monitoring
 	p.startScan()
@@ -125,7 +131,7 @@ func (p *WiFiSetupPage) Init(app ApplicationInterface) error {
 
 // checkConnectionStatusLoop periodically checks the network status.
 func (p *WiFiSetupPage) checkConnectionStatusLoop() {
-	ticker := time.NewTicker(5 * time.Second)
+	ticker := time.NewTicker(2 * time.Second) // Check more frequently for better UX
 	defer ticker.Stop()
 
 	status, _ := p.networkManager.CheckInternetConnection()
@@ -183,11 +189,16 @@ func (p *WiFiSetupPage) handlePasswordInput(sym sdl.Keycode) {
 	case sdl.K_RETURN:
 		logger.InfoF("Attempting to connect to %s", p.selectedAP.SSID)
 		sdl.StopTextInput()
-		p.pendingSSID = p.selectedAP.SSID // Set pending state
+		p.pendingSSID = p.selectedAP.SSID
+		p.isConnecting = true
+		p.connectionError = ""
+		p.connectionAttemptTime = time.Now()
 		err := p.networkManager.Connect(*p.wifiDevice, *p.selectedAP, p.passwordInput)
 		if err != nil {
 			logger.ErrorF("Failed to send connect command: %v", err)
-			p.pendingSSID = "" // Clear pending state on immediate failure
+			p.isConnecting = false
+			p.pendingSSID = ""
+			p.connectionError = "Failed to initiate connection"
 		}
 		p.isEnteringPassword = false
 	case sdl.K_BACKSPACE:
@@ -198,6 +209,7 @@ func (p *WiFiSetupPage) handlePasswordInput(sym sdl.Keycode) {
 	case sdl.K_ESCAPE:
 		p.isEnteringPassword = false
 		p.pendingSSID = ""
+		p.connectionError = ""
 		sdl.StopTextInput()
 	}
 }
@@ -216,7 +228,8 @@ func (p *WiFiSetupPage) handleNetworkSelection(sym sdl.Keycode) {
 	case sdl.K_RETURN:
 		if len(p.accessPoints) > 0 && p.selectedIndex < len(p.accessPoints) {
 			p.selectedAP = &p.accessPoints[p.selectedIndex].AP
-			p.pendingSSID = p.selectedAP.SSID // Set pending state
+			p.pendingSSID = p.selectedAP.SSID
+			p.connectionError = ""
 			if p.selectedAP.IsProtected {
 				p.isEnteringPassword = true
 				p.passwordInput = ""
@@ -225,10 +238,14 @@ func (p *WiFiSetupPage) handleNetworkSelection(sym sdl.Keycode) {
 				sdl.StartTextInput()
 			} else {
 				logger.InfoF("Connecting to open network: %s", p.selectedAP.SSID)
+				p.isConnecting = true
+				p.connectionAttemptTime = time.Now()
 				err := p.networkManager.Connect(*p.wifiDevice, *p.selectedAP, "")
 				if err != nil {
 					logger.ErrorF("Failed to send connect command: %v", err)
-					p.pendingSSID = "" // Clear pending state on immediate failure
+					p.isConnecting = false
+					p.pendingSSID = ""
+					p.connectionError = "Failed to initiate connection"
 				}
 			}
 		}
@@ -247,13 +264,116 @@ func (p *WiFiSetupPage) Update(dt float32) error {
 		p.buildNetworkUIList(results)
 	case status := <-p.statusChan:
 		p.connectionStatus = status
+		p.handleConnectionStatusUpdate(status)
 		p.updateConnectionStatusItem()
 	case err := <-p.errorChan:
 		p.isScanning = false
 		logger.ErrorF("Network scan error: %v", err)
 	default:
 	}
+
+	// Check for connection timeout
+	if p.isConnecting && time.Since(p.connectionAttemptTime) > p.connectionTimeout {
+		logger.WarningF("Connection to %s timed out", p.pendingSSID)
+		p.isConnecting = false
+		p.connectionError = "Connection timed out - Incorrect password?"
+		if p.selectedAP != nil && p.selectedAP.IsProtected {
+			p.isEnteringPassword = true
+			p.passwordInput = ""
+			p.updatePasswordTexture()
+			p.updatePasswordPromptTexture()
+			p.updatePasswordErrorTexture()
+			sdl.StartTextInput()
+		}
+	}
+
 	return nil
+}
+
+// handleConnectionStatusUpdate checks if connection succeeded or failed
+func (p *WiFiSetupPage) handleConnectionStatusUpdate(status *network.ConnectionStatus) {
+	if !p.isConnecting {
+		return
+	}
+
+	// Check if we successfully connected to our pending SSID
+	if status.StatusCode == network.StatusWifiConnectedInternetUp {
+		activeSSID := p.getActiveSSID()
+		if activeSSID == p.pendingSSID {
+			logger.InfoF("Successfully connected to %s", p.pendingSSID)
+			p.isConnecting = false
+			p.pendingSSID = ""
+			p.connectionError = ""
+			p.refreshNetworkColors()
+		}
+	} else if status.StatusCode == network.StatusWifiAvailableNotConnected {
+		// Connection failed - we're trying to connect but now show as not connected
+		if time.Since(p.connectionAttemptTime) > 5*time.Second {
+			logger.WarningF("Connection to %s failed", p.pendingSSID)
+			p.isConnecting = false
+			if p.selectedAP != nil && p.selectedAP.IsProtected {
+				p.connectionError = "Connection failed - Incorrect password?"
+				p.isEnteringPassword = true
+				p.passwordInput = ""
+				p.updatePasswordTexture()
+				p.updatePasswordPromptTexture()
+				p.updatePasswordErrorTexture()
+				sdl.StartTextInput()
+			} else {
+				p.connectionError = "Connection failed"
+				p.pendingSSID = ""
+			}
+		}
+	}
+}
+
+// getActiveSSID queries NetworkManager for the currently active WiFi SSID
+func (p *WiFiSetupPage) getActiveSSID() string {
+	if p.networkManager == nil || p.wifiDevice == nil {
+		return ""
+	}
+
+	nmObj := p.networkManager.Conn().Object("org.freedesktop.NetworkManager", "/org/freedesktop/NetworkManager")
+	prop, err := nmObj.GetProperty("org.freedesktop.NetworkManager.ActiveConnections")
+	if err != nil {
+		return ""
+	}
+
+	if paths, ok := prop.Value().([]dbus.ObjectPath); ok {
+		for _, path := range paths {
+			acObj := p.networkManager.Conn().Object("org.freedesktop.NetworkManager", path)
+			devProp, err := acObj.GetProperty("org.freedesktop.NetworkManager.Connection.Active.Devices")
+			if err == nil {
+				if devPaths, ok := devProp.Value().([]dbus.ObjectPath); ok {
+					for _, devPath := range devPaths {
+						if string(devPath) == string(p.wifiDevice.Path) {
+							idProp, err := acObj.GetProperty("org.freedesktop.NetworkManager.Connection.Active.Id")
+							if err == nil {
+								if id, ok := idProp.Value().(string); ok {
+									return id
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	return ""
+}
+
+// refreshNetworkColors updates the colors of network items based on active status
+func (p *WiFiSetupPage) refreshNetworkColors() {
+	activeSSID := p.getActiveSSID()
+	p.activeSSID = activeSSID
+
+	for i := range p.accessPoints {
+		if p.accessPoints[i].AP.SSID == activeSSID {
+			p.accessPoints[i].Item.Color = colors.LawnGreen
+		} else {
+			p.accessPoints[i].Item.Color = colors.White
+		}
+	}
 }
 
 // updateConnectionStatusItem creates the colored status message item.
@@ -261,30 +381,75 @@ func (p *WiFiSetupPage) updateConnectionStatusItem() {
 	if p.connectionStatusItem.ID != 0 {
 		gl.DeleteTextures(1, &p.connectionStatusItem.ID)
 	}
+
+	// Show connecting message if in progress
+	if p.isConnecting {
+		message := fmt.Sprintf("Connecting to %s...", p.pendingSSID)
+		item, err := NewStringItem(message, p.applicationFont, colors.Yellow)
+		if err == nil {
+			p.connectionStatusItem = item
+		}
+		return
+	}
+
+	// Show connection error if present
+	if p.connectionError != "" {
+		item, err := NewStringItem(p.connectionError, p.applicationFont, colors.Red)
+		if err == nil {
+			p.connectionStatusItem = item
+		}
+		return
+	}
+
 	if p.connectionStatus == nil {
 		return
 	}
 
 	switch p.connectionStatus.StatusCode {
-	case network.StatusWifiConnectedInternetUp, network.StatusEthernetConnectedInternetUp:
-		for i, item := range p.accessPoints {
-			if item.AP.IsActive {
-				p.accessPoints[i].Item.Color = colors.LawnGreen
-			}
-		}
-	case network.StatusWifiAvailableNotConnected, network.StatusEthernetNotConnected, network.StatusNoDevicesFound, network.StatusError:
-		// We are explicitly disconnected. Clear the active and pending states.
-		p.activeSSID = ""
-		p.pendingSSID = ""
-	}
-
-	if p.connectionStatus.StatusCode == network.StatusWifiConnectedInternetUp {
-		message := "Wifi Connected, Internet Accessible. Press F1 to exit WiFi Setup"
+	case network.StatusWifiConnectedInternetUp:
+		message := fmt.Sprintf("Connected to %s - Internet accessible | F1 to exit", p.activeSSID)
 		item, err := NewStringItem(message, p.applicationFont, colors.LawnGreen)
 		if err == nil {
 			p.connectionStatusItem = item
 		}
-	} else {
+		p.refreshNetworkColors()
+
+	case network.StatusWifiAvailableNotConnected:
+		message := "WiFi available - Not connected | Select network or press R to rescan"
+		item, err := NewStringItem(message, p.applicationFont, colors.Yellow)
+		if err == nil {
+			p.connectionStatusItem = item
+		}
+
+	case network.StatusEthernetConnectedInternetUp:
+		message := "Ethernet connected - Internet accessible | F1 to exit"
+		item, err := NewStringItem(message, p.applicationFont, colors.LawnGreen)
+		if err == nil {
+			p.connectionStatusItem = item
+		}
+
+	case network.StatusEthernetNotConnected:
+		message := "No network connection | Select WiFi network or press R to rescan"
+		item, err := NewStringItem(message, p.applicationFont, colors.Red)
+		if err == nil {
+			p.connectionStatusItem = item
+		}
+
+	case network.StatusNoDevicesFound:
+		message := "No network devices found"
+		item, err := NewStringItem(message, p.applicationFont, colors.Red)
+		if err == nil {
+			p.connectionStatusItem = item
+		}
+
+	case network.StatusError:
+		message := "Network status check failed"
+		item, err := NewStringItem(message, p.applicationFont, colors.Red)
+		if err == nil {
+			p.connectionStatusItem = item
+		}
+
+	default:
 		item, err := NewStringItem(p.connectionStatus.Message, p.applicationFont, colors.White)
 		if err == nil {
 			p.connectionStatusItem = item
@@ -294,38 +459,8 @@ func (p *WiFiSetupPage) updateConnectionStatusItem() {
 
 // buildNetworkUIList creates the renderable textures for the list of discovered networks.
 func (p *WiFiSetupPage) buildNetworkUIList(aps []network.AccessPoint) {
-	// Query NetworkManager for the currently active Wi-Fi SSID
-	activeSSID := ""
-	if p.networkManager != nil && p.wifiDevice != nil {
-		nmObj := p.networkManager.Conn().Object("org.freedesktop.NetworkManager", "/org/freedesktop/NetworkManager")
-		// Get the "ActiveConnections" property (array of object paths)
-		prop, err := nmObj.GetProperty("org.freedesktop.NetworkManager.ActiveConnections")
-		if err == nil {
-			if paths, ok := prop.Value().([]dbus.ObjectPath); ok {
-				for _, path := range paths {
-					acObj := p.networkManager.Conn().Object("org.freedesktop.NetworkManager", path)
-					// Get the Devices property for this active connection
-					devProp, err := acObj.GetProperty("org.freedesktop.NetworkManager.Connection.Active.Devices")
-					if err == nil {
-						if devPaths, ok := devProp.Value().([]dbus.ObjectPath); ok {
-							for _, devPath := range devPaths {
-								if string(devPath) == string(p.wifiDevice.Path) {
-									// This active connection uses our Wi-Fi device
-									// Get the connection ID (SSID)
-									idProp, err := acObj.GetProperty("org.freedesktop.NetworkManager.Connection.Active.Id")
-									if err == nil {
-										if id, ok := idProp.Value().(string); ok {
-											activeSSID = id
-										}
-									}
-								}
-							}
-						}
-					}
-				}
-			}
-		}
-	}
+	// Get the currently active Wi-Fi SSID
+	activeSSID := p.getActiveSSID()
 	p.activeSSID = activeSSID
 
 	// Set IsActive flag based on the actual active SSID
@@ -339,7 +474,7 @@ func (p *WiFiSetupPage) buildNetworkUIList(aps []network.AccessPoint) {
 	for i, ap := range aps {
 		ssid := ap.SSID
 		if ap.IsProtected {
-			ssid += " *"
+			ssid += " [L]"
 		}
 		color := white
 		if ap.IsActive {
@@ -381,6 +516,19 @@ func (p *WiFiSetupPage) updatePasswordPromptTexture() {
 	}
 }
 
+// updatePasswordErrorTexture creates the texture for password error message.
+func (p *WiFiSetupPage) updatePasswordErrorTexture() {
+	if p.passwordErrorItem.ID != 0 {
+		gl.DeleteTextures(1, &p.passwordErrorItem.ID)
+	}
+	if p.connectionError != "" {
+		item, err := NewStringItem(p.connectionError, p.applicationFont, colors.DarkRed)
+		if err == nil {
+			p.passwordErrorItem = item
+		}
+	}
+}
+
 // Render draws the entire page.
 func (p *WiFiSetupPage) Render() error {
 	// Get base font size from database
@@ -394,7 +542,7 @@ func (p *WiFiSetupPage) Render() error {
 	}
 
 	// Colors & Config
-	bgColor := sdl.Color{R: 40, G: 42, B: 54, A: 255}
+	bgColor := sdl.Color{R: 0, G: 0, B: 0, A: 255}
 	selectionColor := sdl.Color{R: 68, G: 71, B: 90, A: 255}
 	white := sdl.Color{R: 255, G: 255, B: 255, A: 255}
 	verticalMargin := float32(20)
@@ -469,12 +617,28 @@ func (p *WiFiSetupPage) renderPasswordDialog(solidShader, textShader *shaderMana
 	boxBgColor := sdl.Color{R: 30, G: 30, B: 30, A: 255}
 	white := sdl.Color{R: 255, G: 255, B: 255, A: 255}
 
-	dialogW, dialogH := int32(600), int32(200)
+	dialogW, dialogH := int32(600), int32(250)
+	if p.connectionError != "" {
+		dialogH = int32(300) // Make dialog taller if there's an error
+	}
 	dialogX, dialogY := p.ScreenCenterX-(dialogW/2), p.ScreenCenterY-(dialogH/2)
 
 	// Overlay and dialog background
 	p.Base.RenderSolidColorQuad(solidShader, mgl32.Vec2{0, 0}, mgl32.Vec2{float32(p.ScreenWidth), float32(p.ScreenHeight)}, overlayColor)
 	p.Base.RenderSolidColorQuad(solidShader, mgl32.Vec2{float32(dialogX), float32(dialogY)}, mgl32.Vec2{float32(dialogW), float32(dialogH)}, dialogBgColor)
+
+	currentY := float32(dialogY+dialogH) - 30
+
+	// Password error (if exists) - shown at the top in red
+	if p.passwordErrorItem.ID != 0 {
+		errorScale := float32(20) / baseFontSize
+		errorW := float32(p.passwordErrorItem.W) * errorScale
+		errorH := float32(p.passwordErrorItem.H) * errorScale
+		errorX := float32(p.ScreenCenterX) - (errorW / 2)
+		currentY -= errorH
+		p.Base.RenderTexture(textShader, p.passwordErrorItem.ID, mgl32.Vec2{errorX, currentY}, mgl32.Vec2{errorW, errorH}, colors.DarkRed)
+		currentY -= 20
+	}
 
 	// Password prompt
 	if p.passwordPromptItem.ID != 0 {
@@ -482,8 +646,9 @@ func (p *WiFiSetupPage) renderPasswordDialog(solidShader, textShader *shaderMana
 		promptW := float32(p.passwordPromptItem.W) * promptScale
 		promptH := float32(p.passwordPromptItem.H) * promptScale
 		promptX := float32(p.ScreenCenterX) - (promptW / 2)
-		promptY := float32(dialogY+dialogH) - promptH - 20
-		p.Base.RenderTexture(textShader, p.passwordPromptItem.ID, mgl32.Vec2{promptX, promptY}, mgl32.Vec2{promptW, promptH}, white)
+		currentY -= promptH
+		p.Base.RenderTexture(textShader, p.passwordPromptItem.ID, mgl32.Vec2{promptX, currentY}, mgl32.Vec2{promptW, promptH}, white)
+		currentY -= 30
 	}
 
 	// Input box
@@ -492,8 +657,9 @@ func (p *WiFiSetupPage) renderPasswordDialog(solidShader, textShader *shaderMana
 	targetFontSize := int32(36)
 	boxH := targetFontSize + (padding * 2)
 	borderBoxW, borderBoxH := boxW+(border*2), boxH+(border*2)
-	borderBoxX, borderBoxY := p.ScreenCenterX-(borderBoxW/2), p.ScreenCenterY-(borderBoxH/2)
-	boxX, boxY := p.ScreenCenterX-(boxW/2), p.ScreenCenterY-(boxH/2)
+	borderBoxX := p.ScreenCenterX - (borderBoxW / 2)
+	borderBoxY := int32(currentY) - boxH - (padding * 2)
+	boxX, boxY := p.ScreenCenterX-(boxW/2), int32(currentY)-boxH-padding
 
 	p.Base.RenderSolidColorQuad(solidShader, mgl32.Vec2{float32(borderBoxX), float32(borderBoxY)}, mgl32.Vec2{float32(borderBoxW), float32(borderBoxH)}, boxBorderColor)
 	p.Base.RenderSolidColorQuad(solidShader, mgl32.Vec2{float32(boxX), float32(boxY)}, mgl32.Vec2{float32(boxW), float32(boxH)}, boxBgColor)
@@ -532,6 +698,9 @@ func (p *WiFiSetupPage) Destroy() error {
 	}
 	if p.passwordInputItem.ID != 0 {
 		gl.DeleteTextures(1, &p.passwordInputItem.ID)
+	}
+	if p.passwordErrorItem.ID != 0 {
+		gl.DeleteTextures(1, &p.passwordErrorItem.ID)
 	}
 
 	for _, apItem := range p.accessPoints {

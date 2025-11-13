@@ -3,6 +3,7 @@ package page
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/go-gl/gl/v3.3-core/gl"
 	"github.com/go-gl/mathgl/mgl32"
@@ -21,6 +22,10 @@ type LicenseKeyPage struct {
 	titleTextureID     uint32
 	titleTextureWidth  int32
 	titleTextureHeight int32
+
+	currentLicenseDisplayTextureID     uint32
+	currentLicenseDisplayTextureWidth  int32
+	currentLicenseDisplayTextureHeight int32
 
 	inputText              string
 	inputTextTextureID     uint32
@@ -72,6 +77,21 @@ func (p *LicenseKeyPage) Init(app ApplicationInterface) error {
 
 	if licenseKey != "" {
 		p.inputText = licenseKey
+
+		// Create current license key display texture
+		currentLicenseText := fmt.Sprintf("Current License Key: %s", licenseKey)
+		currentLicenseTextureID, currentLicenseWidth, currentLicenseHeight, err := fm.CreateStringTexture(applicationFont, currentLicenseText, textShader)
+		if err != nil {
+			return fmt.Errorf("failed to create current license display texture: %w", err)
+		}
+		if currentLicenseTextureID == 0 {
+			return fmt.Errorf("CreateStringTexture returned a nil texture ID for current license display")
+		}
+
+		logger.InfoF("Created current license display texture %d", currentLicenseTextureID)
+		p.currentLicenseDisplayTextureID = currentLicenseTextureID
+		p.currentLicenseDisplayTextureWidth = currentLicenseWidth
+		p.currentLicenseDisplayTextureHeight = currentLicenseHeight
 	} else {
 		p.inputText = ""
 	}
@@ -79,6 +99,34 @@ func (p *LicenseKeyPage) Init(app ApplicationInterface) error {
 	sdl.StartTextInput()
 
 	return nil
+}
+
+// formatLicenseKey formats the input string with dashes every 4 characters
+// and limits to 16 alphanumeric characters (not counting dashes)
+func formatLicenseKey(input string) string {
+	// Remove all dashes and non-alphanumeric characters
+	cleaned := strings.Map(func(r rune) rune {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
+			return r
+		}
+		return -1
+	}, input)
+
+	// Limit to 16 characters
+	if len(cleaned) > 16 {
+		cleaned = cleaned[:16]
+	}
+
+	// Insert dashes every 4 characters
+	var result strings.Builder
+	for i, char := range cleaned {
+		if i > 0 && i%4 == 0 {
+			result.WriteRune('-')
+		}
+		result.WriteRune(char)
+	}
+
+	return result.String()
 }
 
 // HandleEvent processes SDL events and handles them appropriately for the LicenseKeyPage.
@@ -90,7 +138,9 @@ func (p *LicenseKeyPage) HandleEvent(event *sdl.Event) error {
 
 	switch e := actualEvent.(type) {
 	case *sdl.TextInputEvent:
+		// Add the new character and reformat
 		p.inputText += e.GetText()
+		p.inputText = formatLicenseKey(p.inputText)
 		logger.InfoF("Input text updated: %s", p.inputText)
 	case *sdl.KeyboardEvent:
 		if e.Type == sdl.KEYDOWN {
@@ -107,7 +157,13 @@ func (p *LicenseKeyPage) HandleEvent(event *sdl.Event) error {
 				p.Base.App.PopPage() // Pop this page from the pageStack
 			case sdl.K_BACKSPACE:
 				if len(p.inputText) > 0 {
-					p.inputText = p.inputText[:len(p.inputText)-1]
+					// Remove last character and reformat
+					// Strip all dashes first to get raw characters
+					cleaned := strings.ReplaceAll(p.inputText, "-", "")
+					if len(cleaned) > 0 {
+						cleaned = cleaned[:len(cleaned)-1]
+					}
+					p.inputText = formatLicenseKey(cleaned)
 					logger.InfoF("Input text updated: %s", p.inputText)
 				}
 			}
@@ -174,6 +230,8 @@ func (p *LicenseKeyPage) Render() error {
 	// 1. Calculate Scale
 	titleFontSize := int32(64)
 	titleScale := float32(titleFontSize) / float32(baseFontSize)
+	currentLicenseFontSize := int32(28)
+	currentLicenseScale := float32(currentLicenseFontSize) / float32(baseFontSize)
 	padding := int32(4)
 	verticalMargin := int32(20)
 
@@ -198,6 +256,14 @@ func (p *LicenseKeyPage) Render() error {
 	inputTextW := float32(p.inputTextTextureWidth) * scale
 	inputTextDimensions := mgl32.Vec2{inputTextW, inputTextH}
 
+	var currentLicenseDisplayH, currentLicenseDisplayW float32
+	var currentLicenseDisplayDimensions mgl32.Vec2
+	if p.currentLicenseDisplayTextureID != 0 {
+		currentLicenseDisplayH = float32(p.currentLicenseDisplayTextureHeight) * currentLicenseScale
+		currentLicenseDisplayW = float32(p.currentLicenseDisplayTextureWidth) * currentLicenseScale
+		currentLicenseDisplayDimensions = mgl32.Vec2{currentLicenseDisplayW, currentLicenseDisplayH}
+	}
+
 	// 3. Define positions
 	borderBoxY := p.Base.ScreenCenterY - (borderBoxH / 2)
 	borderBoxX := p.Base.ScreenCenterX - (borderBoxW / 2)
@@ -215,6 +281,13 @@ func (p *LicenseKeyPage) Render() error {
 	inputTextX := boxX + padding
 	inputTextPosition := mgl32.Vec2{float32(inputTextX), float32(inputTextY)}
 
+	var currentLicenseDisplayPosition mgl32.Vec2
+	if p.currentLicenseDisplayTextureID != 0 {
+		currentLicenseDisplayY := borderBoxY - int32(currentLicenseDisplayH) - verticalMargin
+		currentLicenseDisplayX := p.Base.ScreenCenterX - int32(currentLicenseDisplayW/2)
+		currentLicenseDisplayPosition = mgl32.Vec2{float32(currentLicenseDisplayX), float32(currentLicenseDisplayY)}
+	}
+
 	// 4. Get Shaders
 	textShader, _ := sm.Get("text")
 	solidShader, _ := sm.Get("solid_color")
@@ -223,6 +296,12 @@ func (p *LicenseKeyPage) Render() error {
 	p.Base.RenderSolidColorQuad(solidShader, borderBoxPosition, borderBoxDimensions, colors.Gray)
 	p.Base.RenderSolidColorQuad(solidShader, boxPosition, boxDimensions, colors.DarkGray)
 	p.Base.RenderTexture(textShader, p.titleTextureID, titlePosition, titleDimensions, colors.White)
+
+	// Draw current license display if it exists
+	if p.currentLicenseDisplayTextureID != 0 {
+		p.Base.RenderTexture(textShader, p.currentLicenseDisplayTextureID, currentLicenseDisplayPosition, currentLicenseDisplayDimensions, colors.White)
+	}
+
 	if len(p.inputText) > 0 {
 		p.Base.RenderTexture(textShader, p.inputTextTextureID, inputTextPosition, inputTextDimensions, colors.White)
 	}
@@ -234,6 +313,14 @@ func (p *LicenseKeyPage) Destroy() error {
 	logger.InfoF("Destroying LicenseKeyPage...")
 
 	gl.DeleteTextures(1, &p.titleTextureID)
+
+	// Delete current license display texture if it exists
+	if p.currentLicenseDisplayTextureID != 0 {
+		gl.DeleteTextures(1, &p.currentLicenseDisplayTextureID)
+		p.currentLicenseDisplayTextureID = 0
+	}
+
+	// Delete input text texture if it exists
 	if p.inputTextTextureID != 0 {
 		gl.DeleteTextures(1, &p.inputTextTextureID)
 		p.inputTextTextureID = 0
