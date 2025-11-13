@@ -542,7 +542,7 @@ func (p *WiFiSetupPage) Render() error {
 	}
 
 	// Colors & Config
-	bgColor := sdl.Color{R: 40, G: 42, B: 54, A: 255}
+	bgColor := sdl.Color{R: 0, G: 0, B: 0, A: 255}
 	selectionColor := sdl.Color{R: 68, G: 71, B: 90, A: 255}
 	white := sdl.Color{R: 255, G: 255, B: 255, A: 255}
 	verticalMargin := float32(20)
