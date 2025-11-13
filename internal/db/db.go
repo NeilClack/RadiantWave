@@ -1,6 +1,7 @@
 package db
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -235,9 +236,31 @@ func GetConfigValues() (map[string]string, error) {
 
 // SetConfigValue sets a configuration value by key
 // Returns any error encountered || nil
-func SetConfigValue(key string, value string) error {
-	config := Config{Key: key, Value: value}
-	return DB.Save(&config).Error
+func SetConfigValue(key, value string) error {
+	// First try to find existing config
+	var config Config
+	result := DB.Where("key = ?", key).First(&config)
+
+	if result.Error != nil {
+		if result.Error == gorm.ErrRecordNotFound {
+			// Record doesn't exist, create new one
+			config = Config{Key: key, Value: value}
+			if err := DB.Create(&config).Error; err != nil {
+				return fmt.Errorf("failed to create config value for key %s: %w", key, err)
+			}
+		} else {
+			// Some other error occurred
+			return fmt.Errorf("failed to query config for key %s: %w", key, result.Error)
+		}
+	} else {
+		// Record exists, update it
+		config.Value = value
+		if err := DB.Save(&config).Error; err != nil {
+			return fmt.Errorf("failed to update config value for key %s: %w", key, err)
+		}
+	}
+
+	return nil
 }
 
 // GetAffirmations retrieves all affirmation entries from the database
