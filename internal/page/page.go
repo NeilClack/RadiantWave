@@ -29,7 +29,6 @@ type ApplicationInterface interface {
 	SwitchPage(p Page)
 	PushPage(p Page)
 	UnwindToPage(p Page)
-	PopPage()
 	GetDrawableSize() (int32, int32)
 }
 

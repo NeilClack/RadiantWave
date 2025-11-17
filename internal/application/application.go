@@ -527,18 +527,6 @@ func (app *Application) UnwindToPage(p page.Page) {
 	app.scheduleUnwind(p)
 }
 
-// PopPage removes the current page from the stack.
-// Typically called from within a page to close itself.
-func (app *Application) PopPage() {
-	app.pendingAction = func() {
-		if topPage := app.currentPage(); topPage != nil {
-			topPage.Destroy()
-			app.pageStack = app.pageStack[:len(app.pageStack)-1]
-			logger.Info("Popped page from stack")
-		}
-	}
-}
-
 // GetDrawableSize returns the current OpenGL drawable size (typically screen dimensions)
 func (app *Application) GetDrawableSize() (w, h int32) {
 	return app.Window.GLGetDrawableSize()
