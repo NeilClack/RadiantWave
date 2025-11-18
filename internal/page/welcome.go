@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-gl/gl/v3.3-core/gl"
 	"github.com/go-gl/mathgl/mgl32"
@@ -29,10 +30,14 @@ type Welcome struct {
 	emailDisplay       StringItem
 	licenseKeyDisplay  StringItem
 	displayStatus      StringItem
+	sdlDisplayStatus   StringItem
 	hasLicenseInfo     bool
+	lastDisplayUpdate  time.Time
+	drmDisplayCount    int
+	sdlDisplayCount    int
 }
 
-// countConnectedDisplays returns the number of connected displays
+// countConnectedDisplays returns the number of connected displays via DRM
 func countConnectedDisplays() int {
 	matches, err := filepath.Glob("/sys/class/drm/card*/status")
 	if err != nil {
@@ -54,6 +59,73 @@ func countConnectedDisplays() int {
 	}
 
 	return connected
+}
+
+// countSDLDisplays returns the number of displays detected by SDL
+func countSDLDisplays() int {
+	numDisplays, err := sdl.GetNumVideoDisplays()
+	if err != nil {
+		logger.ErrorF("Error getting SDL display count: %v", err)
+		return 0
+	}
+	return numDisplays
+}
+
+// updateDisplayCounts updates the display count textures
+func (p *Welcome) updateDisplayCounts() error {
+	// Get font
+	fm := fontManager.Get()
+	font, ok := fm.GetFont("Roboto-Regular")
+	if !ok {
+		return fmt.Errorf("unable to fetch font")
+	}
+
+	// Get base font size
+	baseFontSizeStr, err := db.GetConfigValue("init_font_size")
+	if err != nil {
+		return fmt.Errorf("retrieving init_font_size from db: %w", err)
+	}
+	baseFontSize, err := strconv.Atoi(baseFontSizeStr)
+	if err != nil {
+		return fmt.Errorf("parsing init_font_size: %w", err)
+	}
+
+	// Update DRM count
+	p.drmDisplayCount = countConnectedDisplays()
+
+	// Delete old texture
+	if p.displayStatus.ID != 0 {
+		gl.DeleteTextures(1, &p.displayStatus.ID)
+	}
+
+	// Create new texture
+	displayStatusText := fmt.Sprintf("Connected Displays: %d", p.drmDisplayCount)
+	p.displayStatus, err = NewStringItem(displayStatusText, font, colors.White)
+	if err != nil {
+		return fmt.Errorf("unable to create display status texture: %w", err)
+	}
+
+	displayStatusScale := float32(24) / float32(baseFontSize)
+	p.displayStatus.Scale(displayStatusScale)
+
+	// Update SDL count
+	p.sdlDisplayCount = countSDLDisplays()
+
+	// Delete old texture
+	if p.sdlDisplayStatus.ID != 0 {
+		gl.DeleteTextures(1, &p.sdlDisplayStatus.ID)
+	}
+
+	// Create new texture
+	sdlDisplayStatusText := fmt.Sprintf("SDL Displays Detected: %d", p.sdlDisplayCount)
+	p.sdlDisplayStatus, err = NewStringItem(sdlDisplayStatusText, font, colors.White)
+	if err != nil {
+		return fmt.Errorf("unable to create SDL display status texture: %w", err)
+	}
+
+	p.sdlDisplayStatus.Scale(displayStatusScale)
+
+	return nil
 }
 
 // Init performs basic page initialization and creation of static assets.
@@ -102,12 +174,10 @@ func (p *Welcome) Init(app ApplicationInterface) error {
 		return fmt.Errorf("unable to create note string texture: %w", err)
 	}
 
-	// Count connected displays and create status texture
-	displayCount := countConnectedDisplays()
-	displayStatusText := fmt.Sprintf("Connected Displays: %d", displayCount)
-	p.displayStatus, err = NewStringItem(displayStatusText, font, colors.White)
-	if err != nil {
-		return fmt.Errorf("unable to create display status texture: %w", err)
+	// Initialize display counts
+	p.lastDisplayUpdate = time.Now()
+	if err := p.updateDisplayCounts(); err != nil {
+		return fmt.Errorf("unable to update display counts: %w", err)
 	}
 
 	// Load license information from database
@@ -165,10 +235,6 @@ func (p *Welcome) Init(app ApplicationInterface) error {
 	scale := float32(fontSize) / float32(baseFontSize)
 	p.note.Scale(scale * 0.75)
 
-	// Scale display status text
-	displayStatusScale := float32(24) / float32(baseFontSize)
-	p.displayStatus.Scale(displayStatusScale)
-
 	// Scale license info texts
 	if p.hasLicenseInfo {
 		licenseInfoScale := float32(28) / float32(baseFontSize)
@@ -191,6 +257,13 @@ func (p *Welcome) HandleEvent(event *sdl.Event) error {
 
 // Update updates animations and changing textures and other changes using `dt` which represents a time delta in float32.
 func (p *Welcome) Update(dt float32) error {
+	// Update display counts every 2 seconds
+	if time.Since(p.lastDisplayUpdate) >= 2*time.Second {
+		if err := p.updateDisplayCounts(); err != nil {
+			logger.ErrorF("Failed to update display counts: %v", err)
+		}
+		p.lastDisplayUpdate = time.Now()
+	}
 	return nil
 }
 
@@ -256,8 +329,19 @@ func (p *Welcome) Render() error {
 	versionPos := mgl32.Vec2{float32(versionX), float32(versionY)}
 
 	// 6) Position display status in bottom left corner
+	displayStatusDim := p.displayStatus.RawDimensions()
+	displayStatusH := displayStatusDim[1]
+
+	// sdlDisplayStatusDim := p.sdlDisplayStatus.RawDimensions()
+	// sdlDisplayStatusH := sdlDisplayStatusDim[1]
+
+	displayStatusMargin := int32(5)
+
 	p.displayStatus.X = 15
 	p.displayStatus.Y = 15
+
+	p.sdlDisplayStatus.X = 15
+	p.sdlDisplayStatus.Y = 15 + int32(displayStatusH) + displayStatusMargin
 
 	// 7) Position license info at bottom center
 	if p.hasLicenseInfo {
@@ -327,6 +411,7 @@ func (p *Welcome) Render() error {
 
 	// Render display status
 	p.Base.RenderTexture(textShader, p.displayStatus.ID, p.displayStatus.Position(), p.displayStatus.RawDimensions(), color)
+	p.Base.RenderTexture(textShader, p.sdlDisplayStatus.ID, p.sdlDisplayStatus.Position(), p.sdlDisplayStatus.RawDimensions(), color)
 
 	// Render license info if it exists
 	if p.hasLicenseInfo {
@@ -350,6 +435,7 @@ func (p *Welcome) Destroy() error {
 	gl.DeleteTextures(1, &p.prompt.ID)
 	gl.DeleteTextures(1, &p.note.ID)
 	gl.DeleteTextures(1, &p.displayStatus.ID)
+	gl.DeleteTextures(1, &p.sdlDisplayStatus.ID)
 
 	if p.hasLicenseInfo {
 		gl.DeleteTextures(1, &p.licenseInfoHeading.ID)
