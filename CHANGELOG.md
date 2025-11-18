@@ -15,6 +15,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 ---   
 
+## [v0.1.2]
+
+### Added
+### Changed
+### Deprecated
+### Removed
+### Fixed  
+- Fixed bug in Email and License key pages causing text in Settings to become solid white rectangles.  
+
+### Security
+
+---  
+
 ## [v0.1.1]
 
 ### Added  

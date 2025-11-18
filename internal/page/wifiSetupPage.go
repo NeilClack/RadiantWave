@@ -297,7 +297,8 @@ func (p *WiFiSetupPage) handleConnectionStatusUpdate(status *network.ConnectionS
 	}
 
 	// Check if we successfully connected to our pending SSID
-	if status.StatusCode == network.StatusWifiConnectedInternetUp {
+	switch status.StatusCode {
+	case network.StatusWifiConnectedInternetUp:
 		activeSSID := p.getActiveSSID()
 		if activeSSID == p.pendingSSID {
 			logger.InfoF("Successfully connected to %s", p.pendingSSID)
@@ -306,7 +307,7 @@ func (p *WiFiSetupPage) handleConnectionStatusUpdate(status *network.ConnectionS
 			p.connectionError = ""
 			p.refreshNetworkColors()
 		}
-	} else if status.StatusCode == network.StatusWifiAvailableNotConnected {
+	case network.StatusWifiAvailableNotConnected:
 		// Connection failed - we're trying to connect but now show as not connected
 		if time.Since(p.connectionAttemptTime) > 5*time.Second {
 			logger.WarningF("Connection to %s failed", p.pendingSSID)

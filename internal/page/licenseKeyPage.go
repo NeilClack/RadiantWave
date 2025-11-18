@@ -154,7 +154,7 @@ func (p *LicenseKeyPage) HandleEvent(event *sdl.Event) error {
 				}
 
 				logger.InfoF("LicenseKey Submitted: %s", p.inputText)
-				p.Base.App.PopPage() // Pop this page from the pageStack
+				p.App.UnwindToPage(&Settings{})
 			case sdl.K_BACKSPACE:
 				if len(p.inputText) > 0 {
 					// Remove last character and reformat

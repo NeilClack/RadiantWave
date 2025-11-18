@@ -123,7 +123,7 @@ func (p *EmailAddressPage) HandleEvent(event *sdl.Event) error {
 				logger.InfoF("Email Submitted: %s", p.inputText)
 
 				if p.inputText != "" {
-					p.Base.App.PopPage() // Remove this page from the pageStack
+					p.App.UnwindToPage(&Settings{})
 				}
 			case sdl.K_BACKSPACE:
 				if len(p.inputText) > 0 {
