@@ -2,7 +2,10 @@ package page
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/go-gl/gl/v3.3-core/gl"
 	"github.com/go-gl/mathgl/mgl32"
@@ -25,7 +28,32 @@ type Welcome struct {
 	licenseInfoHeading StringItem
 	emailDisplay       StringItem
 	licenseKeyDisplay  StringItem
+	displayStatus      StringItem
 	hasLicenseInfo     bool
+}
+
+// countConnectedDisplays returns the number of connected displays
+func countConnectedDisplays() int {
+	matches, err := filepath.Glob("/sys/class/drm/card*/status")
+	if err != nil {
+		logger.ErrorF("Error globbing display devices: %v", err)
+		return 0
+	}
+
+	connected := 0
+	for _, path := range matches {
+		content, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+
+		status := strings.TrimSpace(string(content))
+		if status == "connected" {
+			connected++
+		}
+	}
+
+	return connected
 }
 
 // Init performs basic page initialization and creation of static assets.
@@ -72,6 +100,14 @@ func (p *Welcome) Init(app ApplicationInterface) error {
 	p.note, err = NewStringItem(note, font, colors.White)
 	if err != nil {
 		return fmt.Errorf("unable to create note string texture: %w", err)
+	}
+
+	// Count connected displays and create status texture
+	displayCount := countConnectedDisplays()
+	displayStatusText := fmt.Sprintf("Connected Displays: %d", displayCount)
+	p.displayStatus, err = NewStringItem(displayStatusText, font, colors.White)
+	if err != nil {
+		return fmt.Errorf("unable to create display status texture: %w", err)
 	}
 
 	// Load license information from database
@@ -128,6 +164,10 @@ func (p *Welcome) Init(app ApplicationInterface) error {
 	fontSize := int32(32)
 	scale := float32(fontSize) / float32(baseFontSize)
 	p.note.Scale(scale * 0.75)
+
+	// Scale display status text
+	displayStatusScale := float32(24) / float32(baseFontSize)
+	p.displayStatus.Scale(displayStatusScale)
 
 	// Scale license info texts
 	if p.hasLicenseInfo {
@@ -215,7 +255,11 @@ func (p *Welcome) Render() error {
 	titlePos := mgl32.Vec2{float32(titleX), float32(titleY)}
 	versionPos := mgl32.Vec2{float32(versionX), float32(versionY)}
 
-	// 6) Position license info at bottom
+	// 6) Position display status in bottom left corner
+	p.displayStatus.X = 15
+	p.displayStatus.Y = 15
+
+	// 7) Position license info at bottom center
 	if p.hasLicenseInfo {
 		licenseInfoMargin := int32(10)
 		bottomMargin := int32(20)
@@ -269,7 +313,7 @@ func (p *Welcome) Render() error {
 		p.licenseInfoHeading.Y = currentY
 	}
 
-	// 7) Get shader and render
+	// 8) Get shader and render
 	textShader, ok := sm.Get("text")
 	if !ok {
 		return fmt.Errorf("failed to fetch text shader")
@@ -280,6 +324,9 @@ func (p *Welcome) Render() error {
 	p.Base.RenderTexture(textShader, p.version.ID, versionPos, versionDim, color)
 	p.Base.RenderTexture(textShader, p.prompt.ID, p.prompt.Position(), promptDim, color)
 	p.Base.RenderTexture(textShader, p.note.ID, p.note.Position(), p.note.RawDimensions(), color)
+
+	// Render display status
+	p.Base.RenderTexture(textShader, p.displayStatus.ID, p.displayStatus.Position(), p.displayStatus.RawDimensions(), color)
 
 	// Render license info if it exists
 	if p.hasLicenseInfo {
@@ -302,6 +349,7 @@ func (p *Welcome) Destroy() error {
 	gl.DeleteTextures(1, &p.version.ID)
 	gl.DeleteTextures(1, &p.prompt.ID)
 	gl.DeleteTextures(1, &p.note.ID)
+	gl.DeleteTextures(1, &p.displayStatus.ID)
 
 	if p.hasLicenseInfo {
 		gl.DeleteTextures(1, &p.licenseInfoHeading.ID)
