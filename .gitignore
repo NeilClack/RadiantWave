@@ -51,6 +51,7 @@ assets/audio/*.wav
 VERSION
 pkgroot/
 build/
+radiantwave
 
 # personal notes:
 notes.txt
