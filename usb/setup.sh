@@ -114,6 +114,14 @@ run_step "Download tarball" \
   bash -c 'curl -# -fsSLO "https://repository.radiantwavetech.com/basic/'"$CHANNEL"'/'"$SYSTEM_TYPE"'/'"$BASE"'"'
 run_step "Verify checksum" sha256sum -c "$SUM"
 run_step "Extract package" tar --no-same-owner -xJf "$BASE" -C /
+
+# Fix ownership of user directories extracted by root
+run_step "Fix ownership of localuser home directories" bash -c '
+  if [[ -d /home/localuser/.local ]]; then
+    chown -R localuser:localuser /home/localuser/.local
+  fi
+'
+
 run_step "Cleanup downloads" rm -f VERSION "$BASE" "$SUM"
 
 # --- Users / groups / offline linger ---

@@ -30,7 +30,7 @@ The build script:
 
 - **Entry point**: `radiantwave.go` → `internal/application/application.go`
 - **Page system**: `internal/page/` - UI screens implementing the `Page` interface (Init, HandleEvent, Update, Render, Destroy)
-- **Database**: `internal/db/` - GORM/SQLite storing config, affirmations, and logs at `~/.radiantwave/data.db`
+- **Database**: `internal/db/` - GORM/SQLite storing config, affirmations, and logs at `~/.local/share/radiantwave/data.db`
 - **Graphics**: `internal/graphics/`, `internal/fontManager/`, `internal/shaderManager/` - OpenGL rendering pipeline
 - **Pattern generation**: `internal/pattern/` - Fibonacci-based frequency patterns for spatial/temporal modulation
 - **Network**: `internal/network/` - D-Bus integration with NetworkManager for WiFi
@@ -51,8 +51,7 @@ The build script:
 
 ### Data Paths
 
-- User data: `~/.radiantwave/`
-- Assets: `~/.local/share/radiantwave/`
+- User data & database: `~/.local/share/radiantwave/`
 - Affirmations source: `assets/affirmations/`
 
 ## Dependencies

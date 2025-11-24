@@ -216,11 +216,25 @@ echo "${TAG}" >"$USER_HOME/.local/share/radiantwave/VERSION"
 echo "${TAG}" >"./VERSION"
 
 # --- Create artifact ---
-OUT="radiantwave-${SYSTEM_TYPE}-${TAG}.tar.xz"
-tar --numeric-owner -C "$PKGROOT" -cJf "$OUT" .
-sha256sum "$OUT" >"${OUT}.sha256"
-
-echo "Built: $OUT"
+if [[ "$RELEASE_BUILD" == true ]]; then
+  # Release build: absolute paths from root (for deployment to /home/localuser)
+  OUT="radiantwave-${SYSTEM_TYPE}-${TAG}.tar.xz"
+  tar --numeric-owner -C "$PKGROOT" -cJf "$OUT" .
+  sha256sum "$OUT" >"${OUT}.sha256"
+  echo "Built: $OUT"
+  echo ""
+  echo "Release installation:"
+  echo "  sudo tar --no-same-owner -xJvf $OUT -C /"
+else
+  # Local dev build: relative paths from user home (extracts to \$HOME)
+  OUT="radiantwave-${SYSTEM_TYPE}-${TAG}.tar.xz"
+  tar --numeric-owner -C "$USER_HOME" -cJf "$OUT" .
+  sha256sum "$OUT" >"${OUT}.sha256"
+  echo "Built: $OUT"
+  echo ""
+  echo "Local development installation (no sudo needed):"
+  echo "  tar --no-same-owner -xJvf $OUT -C \$HOME"
+fi
 
 # --- Upload ---
 # rsync -av --rsync-path="sudo rsync" --chown=www-data:www-data --progress \

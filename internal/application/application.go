@@ -135,7 +135,23 @@ func initializeApplicationDirectory() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("could not determine user home directory: %w", err)
 	}
-	return filepath.Join(homeDir, ".radiantwave"), nil
+	appDataDir := filepath.Join(homeDir, ".local", "share", "radiantwave")
+
+	// Create the directory if it doesn't exist
+	if err := os.MkdirAll(appDataDir, 0755); err != nil {
+		return "", fmt.Errorf("could not create application data directory %s: %w", appDataDir, err)
+	}
+
+	// Verify the directory is actually accessible for read/write
+	testFile := filepath.Join(appDataDir, ".access_test")
+	f, err := os.Create(testFile)
+	if err != nil {
+		return "", fmt.Errorf("application data directory %s is not writable: %w", appDataDir, err)
+	}
+	f.Close()
+	os.Remove(testFile)
+
+	return appDataDir, nil
 }
 
 // initializeDatabase sets up the database connection
