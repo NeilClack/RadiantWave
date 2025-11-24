@@ -13,20 +13,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added license key validation requiring 16 alphanumeric characters with red error message display
 - Added `--release` flag to build.sh to distinguish local dev builds from release builds
 - Added CLAUDE.md documentation with build commands and architecture overview
+- Added comprehensive logging for audio device operations (initialization, switching, failures)
+- Added device validation before saving audio device selection
 
 ### Changed
 - Changed database and assets path from `/usr/local/` to `~/.local/share/radiantwave/` for XDG compliance
 - Changed build.sh local builds to extract to `$HOME` without requiring sudo
 - Changed build.sh release builds to extract to `/` with `localuser` paths
 - Changed usb/setup.sh to fix ownership with chown after extraction
+- Changed audio mixer to use system default SDL audio driver instead of hardcoded ALSA
+- Changed audio device selection to validate device before saving to database
 
 ### Deprecated
 ### Removed
+- Removed hardcoded ALSA preference from mixer to support PulseAudio, PipeWire, and other audio systems
+
 ### Fixed
 - Fixed bug in Email and License key pages causing text in Settings to become solid white rectangles
 - Fixed error message positioning in Email and License Key pages to not overlap with current value display
 - Fixed permissions and ownership issues in build script
 - Fixed upload commands in build.sh (uncommented)
+- Fixed audio device selection page using wrong package (audio instead of mixer)
+- Fixed silent fallback to default audio device - now logs warnings and errors appropriately
+- Fixed missing error recovery in audio device switching - now attempts to restore previous device on failure
 
 ### Security
 ---

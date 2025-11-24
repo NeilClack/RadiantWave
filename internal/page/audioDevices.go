@@ -6,10 +6,11 @@ import (
 
 	"github.com/go-gl/gl/v3.3-core/gl"
 	"github.com/veandco/go-sdl2/sdl"
-	"radiantwavetech.com/radiantwave/internal/audio"
 	"radiantwavetech.com/radiantwave/internal/colors"
 	"radiantwavetech.com/radiantwave/internal/db"
 	"radiantwavetech.com/radiantwave/internal/fontManager"
+	"radiantwavetech.com/radiantwave/internal/logger"
+	"radiantwavetech.com/radiantwave/internal/mixer"
 	"radiantwavetech.com/radiantwave/internal/shaderManager"
 )
 
@@ -83,9 +84,11 @@ func (p *AudioDevices) Init(app ApplicationInterface) error {
 	p.prompt.Scale(itemScale)
 
 	// Get list of audio output devices
-	devices, err := audio.ListOutputDevices()
-	if err != nil {
-		return fmt.Errorf("failed to get audio devices: %w", err)
+	devices := mixer.ListDevices()
+	if len(devices) == 0 {
+		logger.WarningF("No audio devices found")
+		// Create a default entry so the page doesn't break
+		devices = []string{"System Default"}
 	}
 
 	// Get currently selected device from database
@@ -150,11 +153,27 @@ func (p *AudioDevices) HandleEvent(event *sdl.Event) error {
 				p.highlightIndex++
 			}
 		case sdl.K_RETURN:
-			// Save selected device to database
+			// Get selected device name
 			deviceName := p.devices[p.highlightIndex].content
+
+			// Handle "System Default" special case
+			if deviceName == "System Default" {
+				deviceName = ""
+			}
+
+			// Validate device by attempting to switch to it
+			logger.InfoF("Attempting to switch to audio device: %q", deviceName)
+			if err := mixer.SwitchDevice(deviceName); err != nil {
+				logger.ErrorF("Failed to switch to device %q: %v", deviceName, err)
+				return fmt.Errorf("failed to switch to device %q: %w", deviceName, err)
+			}
+
+			// Device switch succeeded, save to database
 			if err := db.SetConfigValue("audio_device_name", deviceName); err != nil {
 				return fmt.Errorf("failed to save audio device: %w", err)
 			}
+
+			logger.InfoF("Successfully switched to audio device: %q", deviceName)
 			p.App.UnwindToPage(&Settings{})
 		case sdl.K_BACKSPACE:
 			p.App.UnwindToPage(&Settings{})
