@@ -38,8 +38,8 @@ type LogEntry struct {
 
 var defaultConfigValues = map[string]string{
 	"home_dir":            "",
-	"assets_dir":          "/usr/local/share/radiantwave",
-	"log_dir":             "/usr/local/share/radiantwave/logs.log", // TODO: Convert the log to use the DB instead of a file
+	"assets_dir":          "", // Set dynamically in seedDefaults() to $HOME/.local/share/radiantwave
+	"log_dir":             "", // Set dynamically in seedDefaults() to $HOME/.local/share/radiantwave/logs.log
 	"email_address":       "",
 	"license_key":         "",
 	"system_type":         "home",
@@ -112,7 +112,21 @@ func seedDefaults() error {
 		return err
 	}
 	if count == 0 {
+		// Get user home directory for user-local paths
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			log.Println("Error getting user home directory:", err)
+			return err
+		}
+		localShareDir := filepath.Join(homeDir, ".local", "share", "radiantwave")
+
 		for key, value := range defaultConfigValues {
+			// Replace placeholder paths with user-local paths
+			if key == "assets_dir" {
+				value = localShareDir
+			} else if key == "log_dir" {
+				value = filepath.Join(localShareDir, "logs.log")
+			}
 			config := Config{Key: key, Value: value}
 			if err := DB.Create(&config).Error; err != nil {
 				return err
