@@ -179,12 +179,12 @@ sha256sum "$OUT" >"${OUT}.sha256"
 echo "Built: $OUT"
 
 # --- Upload ---
-rsync -av --rsync-path="sudo rsync" --chown=www-data:www-data --progress \
-  "$OUT" "${OUT}.sha256" VERSION \
-  "$REMOTE_USER@$REMOTE_HOST:$REMOTE_LOCATION/"
+# rsync -av --rsync-path="sudo rsync" --chown=www-data:www-data --progress \
+#   "$OUT" "${OUT}.sha256" VERSION \
+#   "$REMOTE_USER@$REMOTE_HOST:$REMOTE_LOCATION/"
 
-ssh "$REMOTE_USER@$REMOTE_HOST" "ls -l $REMOTE_LOCATION"
+# ssh "$REMOTE_USER@$REMOTE_HOST" "ls -l $REMOTE_LOCATION"
 
-echo "Uploaded to $REMOTE_HOST:$REMOTE_LOCATION"
-echo "Cleaning up local directory"
-rm -rf "$OUT" "$OUT.sha256" "VERSION" "$PKGROOT" radiantwave
+# echo "Uploaded to $REMOTE_HOST:$REMOTE_LOCATION"
+# echo "Cleaning up local directory"
+# rm -rf "$OUT" "$OUT.sha256" "VERSION" "$PKGROOT" radiantwave
