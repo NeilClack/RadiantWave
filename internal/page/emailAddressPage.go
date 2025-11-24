@@ -2,16 +2,21 @@ package page
 
 import (
 	"fmt"
+	"regexp"
 	"strconv"
 
 	"github.com/go-gl/gl/v3.3-core/gl"
 	"github.com/go-gl/mathgl/mgl32"
 	"github.com/veandco/go-sdl2/sdl"
+	"radiantwavetech.com/radiantwave/internal/colors"
 	"radiantwavetech.com/radiantwave/internal/db"
 	"radiantwavetech.com/radiantwave/internal/fontManager"
 	"radiantwavetech.com/radiantwave/internal/logger"
 	"radiantwavetech.com/radiantwave/internal/shaderManager"
 )
+
+// emailRegex validates email format
+var emailRegex = regexp.MustCompile(`^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$`)
 
 type EmailAddressPage struct {
 	Base
@@ -29,6 +34,20 @@ type EmailAddressPage struct {
 	inputTextTextureID     uint32
 	inputTextTextureWidth  int32
 	inputTextTextureHeight int32
+
+	// Error message handling
+	errorMessage              string
+	errorTextureID            uint32
+	errorTextureWidth         int32
+	errorTextureHeight        int32
+
+	// isFirstTimeSetup tracks whether page was loaded empty (first-time setup)
+	isFirstTimeSetup bool
+}
+
+// isValidEmail checks if the given string is a valid email format
+func isValidEmail(email string) bool {
+	return emailRegex.MatchString(email)
 }
 
 // Init performs basic page initialization and creation of static assets.
@@ -74,6 +93,7 @@ func (p *EmailAddressPage) Init(app ApplicationInterface) error {
 
 	if emailAddress != "" {
 		p.inputText = emailAddress
+		p.isFirstTimeSetup = false
 
 		// Create current email display texture
 		currentEmailText := fmt.Sprintf("Current Email: %s", emailAddress)
@@ -91,6 +111,7 @@ func (p *EmailAddressPage) Init(app ApplicationInterface) error {
 		p.currentEmailDisplayTextureHeight = currentEmailHeight
 	} else {
 		p.inputText = ""
+		p.isFirstTimeSetup = true
 	}
 
 	sdl.StartTextInput()
@@ -108,11 +129,34 @@ func (p *EmailAddressPage) HandleEvent(event *sdl.Event) error {
 	switch e := actualEvent.(type) {
 	case *sdl.TextInputEvent:
 		p.inputText += e.GetText()
+		// Clear error when user starts typing
+		p.errorMessage = ""
 		logger.InfoF("Input text updated: %s", p.inputText)
 	case *sdl.KeyboardEvent:
 		if e.Type == sdl.KEYDOWN {
 			switch e.Keysym.Sym {
+			case sdl.K_ESCAPE:
+				// Block escape during first-time setup
+				if p.isFirstTimeSetup {
+					logger.InfoF("Escape blocked during first-time setup")
+					return nil
+				}
+				// Allow escape back to settings if coming from settings
+				sdl.StopTextInput()
+				p.App.UnwindToPage(&Settings{})
 			case sdl.K_RETURN:
+				// Validate email - check empty first, then format
+				if p.inputText == "" {
+					p.errorMessage = "Email address cannot be empty"
+					logger.InfoF("Email validation failed: empty")
+					return nil
+				}
+				if !isValidEmail(p.inputText) {
+					p.errorMessage = "Please enter a valid email address"
+					logger.InfoF("Invalid email format: %s", p.inputText)
+					return nil
+				}
+
 				sdl.StopTextInput()
 
 				// Save email address to database
@@ -122,12 +166,18 @@ func (p *EmailAddressPage) HandleEvent(event *sdl.Event) error {
 
 				logger.InfoF("Email Submitted: %s", p.inputText)
 
-				if p.inputText != "" {
+				if p.isFirstTimeSetup {
+					// First-time setup: navigate to License Key page
+					p.App.PushPage(&LicenseKeyPage{})
+				} else {
+					// Coming from settings: rewind back to settings
 					p.App.UnwindToPage(&Settings{})
 				}
 			case sdl.K_BACKSPACE:
 				if len(p.inputText) > 0 {
 					p.inputText = p.inputText[:len(p.inputText)-1]
+					// Clear error when user edits input
+					p.errorMessage = ""
 					logger.InfoF("Input text updated: %s", p.inputText)
 				}
 			}
@@ -138,10 +188,6 @@ func (p *EmailAddressPage) HandleEvent(event *sdl.Event) error {
 
 // Update updates animations and changing textures and other changes using `dt` which represents a time delta in float32.
 func (p *EmailAddressPage) Update(dt float32) error {
-	if len(p.inputText) == 0 {
-		return nil
-	}
-
 	// Get application font from database
 	applicationFont, err := db.GetConfigValue("application_font")
 	if err != nil {
@@ -155,24 +201,54 @@ func (p *EmailAddressPage) Update(dt float32) error {
 		return fmt.Errorf("unable to fetch text shader")
 	}
 
-	// Create the new inputText texture
-	inputTextTextureID, inputTextTextureWidth, inputTextTextureHeight, err := fm.CreateStringTexture(
-		applicationFont,
-		p.inputText,
-		shader,
-	)
-	if err != nil {
-		return fmt.Errorf("unable to create new input text texture: %w", err)
+	// Update input text texture
+	if len(p.inputText) > 0 {
+		// Create the new inputText texture
+		inputTextTextureID, inputTextTextureWidth, inputTextTextureHeight, err := fm.CreateStringTexture(
+			applicationFont,
+			p.inputText,
+			shader,
+		)
+		if err != nil {
+			return fmt.Errorf("unable to create new input text texture: %w", err)
+		}
+
+		// Delete old texture if it exists
+		if p.inputTextTextureID != 0 {
+			gl.DeleteTextures(1, &p.inputTextTextureID)
+		}
+
+		p.inputTextTextureID = inputTextTextureID
+		p.inputTextTextureWidth = inputTextTextureWidth
+		p.inputTextTextureHeight = inputTextTextureHeight
 	}
 
-	// Delete old texture if it exists
-	if p.inputTextTextureID != 0 {
-		gl.DeleteTextures(1, &p.inputTextTextureID)
-	}
+	// Update error message texture
+	if p.errorMessage != "" {
+		errorTextureID, errorWidth, errorHeight, err := fm.CreateStringTexture(
+			applicationFont,
+			p.errorMessage,
+			shader,
+		)
+		if err != nil {
+			return fmt.Errorf("unable to create error text texture: %w", err)
+		}
 
-	p.inputTextTextureID = inputTextTextureID
-	p.inputTextTextureWidth = inputTextTextureWidth
-	p.inputTextTextureHeight = inputTextTextureHeight
+		// Delete old error texture if it exists
+		if p.errorTextureID != 0 {
+			gl.DeleteTextures(1, &p.errorTextureID)
+		}
+
+		p.errorTextureID = errorTextureID
+		p.errorTextureWidth = errorWidth
+		p.errorTextureHeight = errorHeight
+	} else {
+		// Clear error texture if no error message
+		if p.errorTextureID != 0 {
+			gl.DeleteTextures(1, &p.errorTextureID)
+			p.errorTextureID = 0
+		}
+	}
 
 	return nil
 }
@@ -224,6 +300,17 @@ func (p *EmailAddressPage) Render() error {
 		currentEmailDisplayDimensions = mgl32.Vec2{currentEmailDisplayW, currentEmailDisplayH}
 	}
 
+	// Error text dimensions
+	errorFontSize := int32(20)
+	errorScale := float32(errorFontSize) / float32(baseFontSize)
+	var errorTextH, errorTextW float32
+	var errorTextDimensions mgl32.Vec2
+	if p.errorTextureID != 0 {
+		errorTextH = float32(p.errorTextureHeight) * errorScale
+		errorTextW = float32(p.errorTextureWidth) * errorScale
+		errorTextDimensions = mgl32.Vec2{errorTextW, errorTextH}
+	}
+
 	// 3. Define positions
 	borderBoxY := p.Base.ScreenCenterY - (borderBoxH / 2)
 	borderBoxX := p.Base.ScreenCenterX - (borderBoxW / 2)
@@ -243,6 +330,21 @@ func (p *EmailAddressPage) Render() error {
 		currentEmailDisplayY := borderBoxY - int32(currentEmailDisplayH) - verticalMargin
 		currentEmailDisplayX := p.Base.ScreenCenterX - int32(currentEmailDisplayW/2)
 		currentEmailDisplayPosition = mgl32.Vec2{float32(currentEmailDisplayX), float32(currentEmailDisplayY)}
+	}
+
+	// Error text position (below current email display to avoid overlap)
+	var errorTextPosition mgl32.Vec2
+	if p.errorTextureID != 0 {
+		var errorTextY int32
+		if p.currentEmailDisplayTextureID != 0 {
+			// Position below the current email display
+			errorTextY = borderBoxY - int32(currentEmailDisplayH) - verticalMargin - int32(errorTextH) - (verticalMargin / 2)
+		} else {
+			// No current email display, position below the input box
+			errorTextY = borderBoxY - int32(errorTextH) - (verticalMargin / 2)
+		}
+		errorTextX := p.Base.ScreenCenterX - int32(errorTextW/2)
+		errorTextPosition = mgl32.Vec2{float32(errorTextX), float32(errorTextY)}
 	}
 
 	// 4. Define Colors
@@ -267,6 +369,11 @@ func (p *EmailAddressPage) Render() error {
 	if len(p.inputText) > 0 {
 		p.Base.RenderTexture(textShader, p.inputTextTextureID, inputTextPosition, inputTextDimensions, white)
 	}
+
+	// Draw error message if it exists
+	if p.errorTextureID != 0 {
+		p.Base.RenderTexture(textShader, p.errorTextureID, errorTextPosition, errorTextDimensions, colors.ErrorRed)
+	}
 	return nil
 }
 
@@ -286,6 +393,12 @@ func (p *EmailAddressPage) Destroy() error {
 	if p.inputTextTextureID != 0 {
 		gl.DeleteTextures(1, &p.inputTextTextureID)
 		p.inputTextTextureID = 0
+	}
+
+	// Delete error texture if it exists
+	if p.errorTextureID != 0 {
+		gl.DeleteTextures(1, &p.errorTextureID)
+		p.errorTextureID = 0
 	}
 
 	sdl.StopTextInput()
