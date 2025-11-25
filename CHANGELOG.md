@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+### Changed
+### Deprecated
+### Removed
+### Fixed
+### Security  
+
+---
+
+## [v0.1.2]  
+
+### Added  
+- Added CLAUDE.md documentation with build commands and architecture overview
 - Added first-time setup flow for Email and License Key pages with mandatory completion
 - Added email validation with regex pattern matching and red error message display
 - Added license key validation requiring 16 alphanumeric characters with red error message display
@@ -15,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added CLAUDE.md documentation with build commands and architecture overview
 - Added comprehensive logging for audio device operations (initialization, switching, failures)
 - Added device validation before saving audio device selection
+
 
 ### Changed
 - Changed database and assets path from `/usr/local/` to `~/.local/share/radiantwave/` for XDG compliance
@@ -37,37 +50,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed silent fallback to default audio device - now logs warnings and errors appropriately
 - Fixed missing error recovery in audio device switching - now attempts to restore previous device on failure
 
-### Security
----
-
-## [v0.1.2]
-
-### Added
-### Changed
-- Changed database path from `~/.radiantwave/` to `~/.local/share/radiantwave/` for XDG compliance
-- Changed build.sh local builds to extract to `$HOME` without requiring sudo
-- Changed build.sh release builds to extract to `/` with `localuser` paths
-- Changed usb/setup.sh to fix ownership with chown after extraction
-
-### Deprecated
-### Removed
-### Fixed
-- Fixed bug in Email and License key pages causing text in Settings to become solid white rectangles.
-- Fixed error message positioning in Email and License Key pages to not overlap with current value display
 
 ### Security
-
----
-
-## [v0.1.2]
-
-### Added
-- Added first-time setup flow for Email and License Key pages with mandatory completion
-- Added email validation with regex pattern matching and error display
-- Added license key validation requiring 16 alphanumeric characters with error display
-- Added `--release` flag to build.sh to distinguish local dev builds from release builds
-- Added CLAUDE.md documentation with build commands and architecture overview
-
 
 ---
 
