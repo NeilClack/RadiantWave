@@ -4,7 +4,6 @@ package mixer
 import (
 	"errors"
 	"fmt"
-	"os"
 	"strconv"
 	"sync"
 
@@ -41,12 +40,17 @@ func Init(wantedDevice string) error {
 		return nil
 	}
 
-	// Optional: prefer ALSA; do this before SDL init.
-	_ = os.Setenv("SDL_AUDIODRIVER", "alsa")
+	// Let SDL choose the best audio driver for the system
+	// Remove hardcoded ALSA preference to support PulseAudio, PipeWire, etc.
+	// Users can set SDL_AUDIODRIVER environment variable if needed
 
 	if err := sdl.InitSubSystem(sdl.INIT_AUDIO); err != nil {
 		return fmt.Errorf("SDL audio init failed: %w", err)
 	}
+
+	// Log which audio driver SDL selected
+	driver := sdl.GetCurrentAudioDriver()
+	logger.InfoF("SDL audio driver: %s", driver)
 
 	// WAV-only does not require mix.Init(); add when you support OGG/MP3/etc.
 	if err := openDeviceLocked(wantedDevice); err != nil {
@@ -80,19 +84,31 @@ func Init(wantedDevice string) error {
 	return nil
 }
 
-// openDeviceLocked tries to open the named device; if it fails and the name wasn’t empty, falls back to default.
+// openDeviceLocked tries to open the named device; if it fails and the name wasn't empty, falls back to default.
 func openDeviceLocked(name string) error {
 	if err := mix.OpenAudioDevice(defaultFreq, defaultFormat, defaultChannels, defaultChunkSize, name, defaultAllow); err != nil {
 		if name != "" {
+			// Log the failure of the requested device
+			logger.WarningF("Failed to open audio device %q: %v", name, err)
+			logger.InfoF("Attempting fallback to system default audio device")
+
 			// Fallback to default device
 			if err2 := mix.OpenAudioDevice(defaultFreq, defaultFormat, defaultChannels, defaultChunkSize, "", defaultAllow); err2 != nil {
+				logger.ErrorF("Failed to open default audio device: %v", err2)
 				return fmt.Errorf("failed to open device %q and default device: %w", name, err2)
 			}
+			logger.InfoF("Successfully opened system default audio device")
 			deviceName = "" // actually opened default
 		} else {
+			logger.ErrorF("Failed to open default audio device: %v", err)
 			return fmt.Errorf("failed to open default audio device: %w", err)
 		}
 	} else {
+		if name != "" {
+			logger.InfoF("Successfully opened audio device: %q", name)
+		} else {
+			logger.InfoF("Successfully opened system default audio device")
+		}
 		deviceName = name
 	}
 	deviceOpen = true
@@ -231,6 +247,17 @@ func SwitchDevice(newName string) error {
 		return errors.New("audio mixer not initialized")
 	}
 
+	// Log device switch attempt
+	oldDevice := deviceName
+	if oldDevice == "" {
+		oldDevice = "system default"
+	}
+	newDeviceLog := newName
+	if newDeviceLog == "" {
+		newDeviceLog = "system default"
+	}
+	logger.InfoF("Switching audio device from %q to %q", oldDevice, newDeviceLog)
+
 	// Capture current state
 	wasPlaying := mix.PlayingMusic()
 	savedPath := currentPath
@@ -238,6 +265,9 @@ func SwitchDevice(newName string) error {
 	savedVolume := currentVolume
 
 	// Stop and release current music before reopening device
+	if wasPlaying {
+		logger.InfoF("Stopping current playback for device switch")
+	}
 	mix.HaltMusic()
 	if currentMusic != nil {
 		currentMusic.Free()
@@ -248,12 +278,19 @@ func SwitchDevice(newName string) error {
 
 	// Close and reopen device
 	if deviceOpen {
+		logger.InfoF("Closing current audio device")
 		mix.CloseAudio()
 		deviceOpen = false
 	}
 	if err := openDeviceLocked(newName); err != nil {
-		// Best effort: try to reopen the previous device (or default) so we don’t leave audio dead
-		_ = openDeviceLocked(deviceName)
+		logger.ErrorF("Failed to switch to device %q: %v", newName, err)
+		logger.InfoF("Attempting to restore previous device %q", oldDevice)
+		// Best effort: try to reopen the previous device (or default) so we don't leave audio dead
+		if restoreErr := openDeviceLocked(oldDevice); restoreErr != nil {
+			logger.ErrorF("Failed to restore previous device %q: %v", oldDevice, restoreErr)
+		} else {
+			logger.InfoF("Successfully restored previous device %q", oldDevice)
+		}
 		return err
 	}
 
@@ -262,9 +299,11 @@ func SwitchDevice(newName string) error {
 
 	// Optionally resume previous track if there was one
 	if wasPlaying && savedPath != "" {
+		logger.InfoF("Resuming playback on new device")
 		m, err := mix.LoadMUS(savedPath)
 		if err != nil {
-			// Don’t fail the device switch just because reload failed
+			// Don't fail the device switch just because reload failed
+			logger.ErrorF("Device switched successfully, but failed to reload music %q: %v", savedPath, err)
 			return fmt.Errorf("device switched, but reloading %q failed: %w", savedPath, err)
 		}
 		currentMusic = m
@@ -275,10 +314,13 @@ func SwitchDevice(newName string) error {
 			currentMusic = nil
 			currentPath = ""
 			currentLoops = 0
+			logger.ErrorF("Device switched successfully, but failed to restart playback: %v", err)
 			return fmt.Errorf("device switched, but restarting playback failed: %w", err)
 		}
+		logger.InfoF("Successfully resumed playback on new device")
 	}
 
+	logger.InfoF("Successfully switched to audio device %q", newDeviceLog)
 	return nil
 }
 
