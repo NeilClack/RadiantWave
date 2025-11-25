@@ -36,6 +36,11 @@ var (
 	DarkSlateGray  = sdl.Color{R: 47, G: 79, B: 79, A: 255}
 )
 
+// Error Colors
+var (
+	ErrorRed = sdl.Color{R: 255, G: 80, B: 80, A: 255}
+)
+
 // Pinks & Reds
 var (
 	Pink            = sdl.Color{R: 255, G: 192, B: 203, A: 255}

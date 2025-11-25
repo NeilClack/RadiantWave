@@ -14,9 +14,9 @@ REPO_BASE="https://repository.radiantwavetech.com/basic"
 BASE_URL="${REPO_BASE}/${CHANNEL}/${SYSTEM_TYPE}"
 
 # --- State paths ---
-STATE_DIR="/usr/local/share/radiantwave"
+STATE_DIR="/home/localuser/.local/share/radiantwave"
 LOCAL_VERSION_FILE="${STATE_DIR}/VERSION"
-POST_INSTALL_DIR="/usr/local/bin/scripts"
+POST_INSTALL_DIR="/home/localuser/.local/bin/scripts"
 
 mkdir -p "$STATE_DIR"
 
@@ -126,6 +126,6 @@ else
   log "No post-install directory found at ${POST_INSTALL_DIR}; skipping."
 fi
 
-# --- 8) Reboot only if update happened ---
-log "Rebooting to apply update..."
-/usr/bin/systemctl reboot
+# --- 8) Signal update completion (no reboot - requires manual action) ---
+log "Update complete! Changes will take effect after next login or system restart."
+log "A manual reboot is recommended to apply all changes."

@@ -31,6 +31,29 @@ type LicenseKeyPage struct {
 	inputTextTextureID     uint32
 	inputTextTextureWidth  int32
 	inputTextTextureHeight int32
+
+	// Error message handling
+	errorMessage              string
+	errorTextureID            uint32
+	errorTextureWidth         int32
+	errorTextureHeight        int32
+
+	// isFirstTimeSetup tracks whether page was loaded empty (first-time setup)
+	isFirstTimeSetup bool
+}
+
+// isValidLicenseKey checks if the license key has exactly 16 alphanumeric characters
+func isValidLicenseKey(key string) bool {
+	cleaned := strings.ReplaceAll(key, "-", "")
+	if len(cleaned) != 16 {
+		return false
+	}
+	for _, r := range cleaned {
+		if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9')) {
+			return false
+		}
+	}
+	return true
 }
 
 // Init performs basic page initialization and creation of static assets.
@@ -77,6 +100,7 @@ func (p *LicenseKeyPage) Init(app ApplicationInterface) error {
 
 	if licenseKey != "" {
 		p.inputText = licenseKey
+		p.isFirstTimeSetup = false
 
 		// Create current license key display texture
 		currentLicenseText := fmt.Sprintf("Current License Key: %s", licenseKey)
@@ -94,6 +118,7 @@ func (p *LicenseKeyPage) Init(app ApplicationInterface) error {
 		p.currentLicenseDisplayTextureHeight = currentLicenseHeight
 	} else {
 		p.inputText = ""
+		p.isFirstTimeSetup = true
 	}
 
 	sdl.StartTextInput()
@@ -141,11 +166,43 @@ func (p *LicenseKeyPage) HandleEvent(event *sdl.Event) error {
 		// Add the new character and reformat
 		p.inputText += e.GetText()
 		p.inputText = formatLicenseKey(p.inputText)
+		// Clear error when user starts typing
+		p.errorMessage = ""
 		logger.InfoF("Input text updated: %s", p.inputText)
 	case *sdl.KeyboardEvent:
 		if e.Type == sdl.KEYDOWN {
 			switch e.Keysym.Sym {
+			case sdl.K_ESCAPE:
+				// Block escape during first-time setup
+				if p.isFirstTimeSetup {
+					logger.InfoF("Escape blocked during first-time setup")
+					return nil
+				}
+				// Allow escape back to settings if coming from settings
+				sdl.StopTextInput()
+				p.App.UnwindToPage(&Settings{})
 			case sdl.K_RETURN:
+				// Validate license key - check empty first, then length, then characters
+				cleaned := strings.ReplaceAll(p.inputText, "-", "")
+				if cleaned == "" {
+					p.errorMessage = "License key cannot be empty"
+					logger.InfoF("License key validation failed: empty")
+					return nil
+				}
+				if len(cleaned) != 16 {
+					p.errorMessage = fmt.Sprintf("License key must be 16 characters (currently %d)", len(cleaned))
+					logger.InfoF("License key validation failed: wrong length %d", len(cleaned))
+					return nil
+				}
+				// Check for invalid characters
+				for _, r := range cleaned {
+					if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9')) {
+						p.errorMessage = "License key must contain only letters and numbers"
+						logger.InfoF("License key validation failed: invalid characters")
+						return nil
+					}
+				}
+
 				sdl.StopTextInput()
 
 				// Save license key to database
@@ -154,7 +211,14 @@ func (p *LicenseKeyPage) HandleEvent(event *sdl.Event) error {
 				}
 
 				logger.InfoF("LicenseKey Submitted: %s", p.inputText)
-				p.App.UnwindToPage(&Settings{})
+
+				if p.isFirstTimeSetup {
+					// First-time setup: rewind to Welcome page
+					p.App.UnwindToPage(&Welcome{})
+				} else {
+					// Coming from settings: rewind back to settings
+					p.App.UnwindToPage(&Settings{})
+				}
 			case sdl.K_BACKSPACE:
 				if len(p.inputText) > 0 {
 					// Remove last character and reformat
@@ -164,6 +228,8 @@ func (p *LicenseKeyPage) HandleEvent(event *sdl.Event) error {
 						cleaned = cleaned[:len(cleaned)-1]
 					}
 					p.inputText = formatLicenseKey(cleaned)
+					// Clear error when user edits input
+					p.errorMessage = ""
 					logger.InfoF("Input text updated: %s", p.inputText)
 				}
 			}
@@ -174,10 +240,6 @@ func (p *LicenseKeyPage) HandleEvent(event *sdl.Event) error {
 
 // Update updates animations and changing textures and other changes using `dt` which represents a time delta in float32.
 func (p *LicenseKeyPage) Update(dt float32) error {
-	if len(p.inputText) == 0 {
-		return nil
-	}
-
 	// Get application font from database
 	applicationFont, err := db.GetConfigValue("application_font")
 	if err != nil {
@@ -191,24 +253,54 @@ func (p *LicenseKeyPage) Update(dt float32) error {
 		return fmt.Errorf("unable to fetch text shader")
 	}
 
-	// Create the new inputText texture
-	inputTextTextureID, inputTextTextureWidth, inputTextTextureHeight, err := fm.CreateStringTexture(
-		applicationFont,
-		p.inputText,
-		shader,
-	)
-	if err != nil {
-		return fmt.Errorf("unable to create new input text texture: %w", err)
+	// Update input text texture
+	if len(p.inputText) > 0 {
+		// Create the new inputText texture
+		inputTextTextureID, inputTextTextureWidth, inputTextTextureHeight, err := fm.CreateStringTexture(
+			applicationFont,
+			p.inputText,
+			shader,
+		)
+		if err != nil {
+			return fmt.Errorf("unable to create new input text texture: %w", err)
+		}
+
+		// Delete old texture if it exists
+		if p.inputTextTextureID != 0 {
+			gl.DeleteTextures(1, &p.inputTextTextureID)
+		}
+
+		p.inputTextTextureID = inputTextTextureID
+		p.inputTextTextureWidth = inputTextTextureWidth
+		p.inputTextTextureHeight = inputTextTextureHeight
 	}
 
-	// Delete old texture if it exists
-	if p.inputTextTextureID != 0 {
-		gl.DeleteTextures(1, &p.inputTextTextureID)
-	}
+	// Update error message texture
+	if p.errorMessage != "" {
+		errorTextureID, errorWidth, errorHeight, err := fm.CreateStringTexture(
+			applicationFont,
+			p.errorMessage,
+			shader,
+		)
+		if err != nil {
+			return fmt.Errorf("unable to create error text texture: %w", err)
+		}
 
-	p.inputTextTextureID = inputTextTextureID
-	p.inputTextTextureWidth = inputTextTextureWidth
-	p.inputTextTextureHeight = inputTextTextureHeight
+		// Delete old error texture if it exists
+		if p.errorTextureID != 0 {
+			gl.DeleteTextures(1, &p.errorTextureID)
+		}
+
+		p.errorTextureID = errorTextureID
+		p.errorTextureWidth = errorWidth
+		p.errorTextureHeight = errorHeight
+	} else {
+		// Clear error texture if no error message
+		if p.errorTextureID != 0 {
+			gl.DeleteTextures(1, &p.errorTextureID)
+			p.errorTextureID = 0
+		}
+	}
 
 	return nil
 }
@@ -264,6 +356,17 @@ func (p *LicenseKeyPage) Render() error {
 		currentLicenseDisplayDimensions = mgl32.Vec2{currentLicenseDisplayW, currentLicenseDisplayH}
 	}
 
+	// Error text dimensions
+	errorFontSize := int32(20)
+	errorScale := float32(errorFontSize) / float32(baseFontSize)
+	var errorTextH, errorTextW float32
+	var errorTextDimensions mgl32.Vec2
+	if p.errorTextureID != 0 {
+		errorTextH = float32(p.errorTextureHeight) * errorScale
+		errorTextW = float32(p.errorTextureWidth) * errorScale
+		errorTextDimensions = mgl32.Vec2{errorTextW, errorTextH}
+	}
+
 	// 3. Define positions
 	borderBoxY := p.Base.ScreenCenterY - (borderBoxH / 2)
 	borderBoxX := p.Base.ScreenCenterX - (borderBoxW / 2)
@@ -288,6 +391,21 @@ func (p *LicenseKeyPage) Render() error {
 		currentLicenseDisplayPosition = mgl32.Vec2{float32(currentLicenseDisplayX), float32(currentLicenseDisplayY)}
 	}
 
+	// Error text position (below current license display to avoid overlap)
+	var errorTextPosition mgl32.Vec2
+	if p.errorTextureID != 0 {
+		var errorTextY int32
+		if p.currentLicenseDisplayTextureID != 0 {
+			// Position below the current license display
+			errorTextY = borderBoxY - int32(currentLicenseDisplayH) - verticalMargin - int32(errorTextH) - (verticalMargin / 2)
+		} else {
+			// No current license display, position below the input box
+			errorTextY = borderBoxY - int32(errorTextH) - (verticalMargin / 2)
+		}
+		errorTextX := p.Base.ScreenCenterX - int32(errorTextW/2)
+		errorTextPosition = mgl32.Vec2{float32(errorTextX), float32(errorTextY)}
+	}
+
 	// 4. Get Shaders
 	textShader, _ := sm.Get("text")
 	solidShader, _ := sm.Get("solid_color")
@@ -304,6 +422,11 @@ func (p *LicenseKeyPage) Render() error {
 
 	if len(p.inputText) > 0 {
 		p.Base.RenderTexture(textShader, p.inputTextTextureID, inputTextPosition, inputTextDimensions, colors.White)
+	}
+
+	// Draw error message if it exists
+	if p.errorTextureID != 0 {
+		p.Base.RenderTexture(textShader, p.errorTextureID, errorTextPosition, errorTextDimensions, colors.ErrorRed)
 	}
 	return nil
 }
@@ -324,6 +447,12 @@ func (p *LicenseKeyPage) Destroy() error {
 	if p.inputTextTextureID != 0 {
 		gl.DeleteTextures(1, &p.inputTextTextureID)
 		p.inputTextTextureID = 0
+	}
+
+	// Delete error texture if it exists
+	if p.errorTextureID != 0 {
+		gl.DeleteTextures(1, &p.errorTextureID)
+		p.errorTextureID = 0
 	}
 
 	sdl.StopTextInput()

@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-SRC="/usr/local/share/radiantwave/hyprland.conf"
+SRC="/home/localuser/.local/share/radiantwave/hyprland.conf"
 DEST="/home/localuser/.config/hypr/hyprland.conf"
 USER="localuser"
 GROUP="localuser"

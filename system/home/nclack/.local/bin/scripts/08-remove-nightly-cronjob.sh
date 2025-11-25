@@ -8,4 +8,4 @@ BACKUP="${CRON_FILE}.bak"
 cp "$CRON_FILE" "$BACKUP"
 
 # Comment the midnight updater line if it's not already commented
-sed -i -E 's|^([[:space:]]*)0 0 \* \* \* root /usr/local/bin/radiantwave-updater$|\1# 0 0 * * * root /usr/local/bin/radiantwave-updater|' "$CRON_FILE"
+sed -i -E 's|^([[:space:]]*)0 0 \* \* \* root /home/localuser/.local/bin/radiantwave-updater$|\1# 0 0 * * * root /home/localuser/.local/bin/radiantwave-updater|' "$CRON_FILE"

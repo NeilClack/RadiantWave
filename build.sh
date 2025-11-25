@@ -15,7 +15,7 @@ Builds the RadiantWave binary, packages it into a tarball, and uploads it
 to the designated file server with correct ownership and permissions.
 
 USAGE:
-  build.sh [SYSTEM_TYPE] [RELEASE_TYPE]
+  build.sh [OPTIONS] [SYSTEM_TYPE] [RELEASE_TYPE]
 
 ARGUMENTS:
   SYSTEM_TYPE     The target system type
@@ -28,6 +28,8 @@ ARGUMENTS:
 
 OPTIONS:
   -h, --help      Show this help message and exit
+  --release       Build for release (uses 'localuser' in paths)
+                  Default is local dev build (uses current \$USER)
 EOF
 }
 
@@ -37,7 +39,39 @@ if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
   exit 0
 fi
 
+# Check for --release flag
+RELEASE_BUILD=false
+POSITIONAL_ARGS=()
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --release)
+      RELEASE_BUILD=true
+      shift
+      ;;
+    -h|--help)
+      show_help
+      exit 0
+      ;;
+    *)
+      POSITIONAL_ARGS+=("$1")
+      shift
+      ;;
+  esac
+done
+
+# Set positional arguments back
+set -- "${POSITIONAL_ARGS[@]:-}"
+
 SYSTEM_TYPE="${1:-home}"
+
+# Determine target username for paths
+if [[ "$RELEASE_BUILD" == true ]]; then
+  TARGET_USER="localuser"
+  BUILD_MODE="release"
+else
+  TARGET_USER="$USER"
+  BUILD_MODE="local"
+fi
 
 detect_branch() {
   if [[ -n "${GITHUB_REF_NAME:-}" ]]; then
@@ -99,6 +133,7 @@ echo " RadiantWave Build Confirmation"
 echo "--------------------------------------------------"
 echo " System Type : $SYSTEM_TYPE"
 echo " Release Type: $RELEASE_TYPE (branch: $BRANCH)"
+echo " Build Mode  : $BUILD_MODE (target user: $TARGET_USER)"
 echo " Version     : $TAG"
 echo "=================================================="
 read -rp "Proceed with build using this version? (y/N): " CONFIRM
@@ -128,15 +163,24 @@ mkdir -p "$PKGROOT"
 
 # --- Stage everything from ./system into the pkg root ---
 # This will place:
-#   - /usr/local/bin/* (e.g., kiosk-session, radiantwave-updater [templated below])
-#   - /home/localuser/.config/hypr/hyprland.conf
+#   - /home/localuser/.local/bin/* (radiantwave, radiantwave-updater, scripts/*)
+#   - /home/localuser/.local/share/radiantwave/* (hyprland.conf, assets, etc.)
 # and any other staged paths you keep under ./system/
 # --- Stage everything from ./system into the pkg root (with dotfiles) ---
 mkdir -p "$PKGROOT"
 cp -a ./system/. "$PKGROOT/"
 
+# Rename source username (nclack) to target username if different
+SRC_USER="nclack"
+if [[ "$TARGET_USER" != "$SRC_USER" && -d "$PKGROOT/home/$SRC_USER" ]]; then
+  mv "$PKGROOT/home/$SRC_USER" "$PKGROOT/home/$TARGET_USER"
+fi
+
+# Define user home for convenience
+USER_HOME="$PKGROOT/home/$TARGET_USER"
+
 # Assert it landed
-REQ="$PKGROOT/usr/local/share/radiantwave/hyprland.conf"
+REQ="$USER_HOME/.local/share/radiantwave/hyprland.conf"
 [[ -f "$REQ" ]] || {
   echo "ERROR: Missing $REQ after copy"
   exit 1
@@ -144,15 +188,15 @@ REQ="$PKGROOT/usr/local/share/radiantwave/hyprland.conf"
 chmod 644 "$REQ"
 
 # Ensure binaries are executable even if git perms are off locally
-if [[ -d "$PKGROOT/usr/local/bin" ]]; then
-  find "$PKGROOT/usr/local/bin" -type f -exec chmod 755 {} \;
+if [[ -d "$USER_HOME/.local/" ]]; then
+  find "$USER_HOME/.local/bin" -type f -exec chmod 755 {} \;
 fi
 
 # --- Drop compiled binary ---
-install -Dm755 ./radiantwave "$PKGROOT/usr/local/bin/radiantwave"
+install -Dm755 ./radiantwave "$USER_HOME/.local/bin/radiantwave"
 
 # --- Template radiantwave-updater in-place (if present from ./system) ---
-UPDATER_PATH="$PKGROOT/usr/local/bin/radiantwave-updater"
+UPDATER_PATH="$USER_HOME/.local/bin/radiantwave-updater"
 if [[ -f "$UPDATER_PATH" ]]; then
   sed -i -e "s|__CHANNEL__|${RELEASE_TYPE}|g" \
     -e "s|__SYSTEM_TYPE__|${SYSTEM_TYPE}|g" "$UPDATER_PATH"
@@ -162,21 +206,35 @@ else
 fi
 
 # --- Assets ---
-install -d -m755 "$PKGROOT/usr/local/share/radiantwave"
-cp -a ./assets/. "$PKGROOT/usr/local/share/radiantwave/"
-find "$PKGROOT/usr/local/share/radiantwave" -type d -exec chmod 755 {} \;
-find "$PKGROOT/usr/local/share/radiantwave" -type f -exec chmod 644 {} \;
+install -d -m755 "$USER_HOME/.local/share/radiantwave"
+cp -a ./assets/. "$USER_HOME/.local/share/radiantwave/"
+find "$USER_HOME/.local/share/radiantwave" -type d -exec chmod 755 {} \;
+find "$USER_HOME/.local/share/radiantwave" -type f -exec chmod 644 {} \;
 
 # --- VERSION files ---
-echo "${TAG}" >"$PKGROOT/usr/local/share/radiantwave/VERSION"
+echo "${TAG}" >"$USER_HOME/.local/share/radiantwave/VERSION"
 echo "${TAG}" >"./VERSION"
 
 # --- Create artifact ---
-OUT="radiantwave-${SYSTEM_TYPE}-${TAG}.tar.xz"
-tar --numeric-owner -C "$PKGROOT" -cJf "$OUT" .
-sha256sum "$OUT" >"${OUT}.sha256"
-
-echo "Built: $OUT"
+if [[ "$RELEASE_BUILD" == true ]]; then
+  # Release build: absolute paths from root (for deployment to /home/localuser)
+  OUT="radiantwave-${SYSTEM_TYPE}-${TAG}.tar.xz"
+  tar --numeric-owner -C "$PKGROOT" -cJf "$OUT" .
+  sha256sum "$OUT" >"${OUT}.sha256"
+  echo "Built: $OUT"
+  echo ""
+  echo "Release installation:"
+  echo "  sudo tar --no-same-owner -xJvf $OUT -C /"
+else
+  # Local dev build: relative paths from user home (extracts to \$HOME)
+  OUT="radiantwave-${SYSTEM_TYPE}-${TAG}.tar.xz"
+  tar --numeric-owner -C "$USER_HOME" -cJf "$OUT" .
+  sha256sum "$OUT" >"${OUT}.sha256"
+  echo "Built: $OUT"
+  echo ""
+  echo "Local development installation (no sudo needed):"
+  echo "  tar --no-same-owner -xJvf $OUT -C \$HOME"
+fi
 
 # --- Upload ---
 rsync -av --rsync-path="sudo rsync" --chown=www-data:www-data --progress \

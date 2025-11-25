@@ -11,48 +11,75 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 ### Deprecated
 ### Removed
-### Fixed  
-### Security
----   
+### Fixed
+### Security  
 
-## [v0.1.2]
+---
 
-### Added
+## [v0.1.2]  
+
+### Added  
+- Added CLAUDE.md documentation with build commands and architecture overview
+- Added first-time setup flow for Email and License Key pages with mandatory completion
+- Added email validation with regex pattern matching and red error message display
+- Added license key validation requiring 16 alphanumeric characters with red error message display
+- Added `--release` flag to build.sh to distinguish local dev builds from release builds
+- Added CLAUDE.md documentation with build commands and architecture overview
+- Added comprehensive logging for audio device operations (initialization, switching, failures)
+- Added device validation before saving audio device selection
+
+
 ### Changed
+- Changed database and assets path from `/usr/local/` to `~/.local/share/radiantwave/` for XDG compliance
+- Changed build.sh local builds to extract to `$HOME` without requiring sudo
+- Changed build.sh release builds to extract to `/` with `localuser` paths
+- Changed usb/setup.sh to fix ownership with chown after extraction
+- Changed audio mixer to use system default SDL audio driver instead of hardcoded ALSA
+- Changed audio device selection to validate device before saving to database
+
 ### Deprecated
 ### Removed
-### Fixed  
-- Fixed bug in Email and License key pages causing text in Settings to become solid white rectangles.  
+- Removed hardcoded ALSA preference from mixer to support PulseAudio, PipeWire, and other audio systems
+
+### Fixed
+- Fixed bug in Email and License key pages causing text in Settings to become solid white rectangles
+- Fixed error message positioning in Email and License Key pages to not overlap with current value display
+- Fixed permissions and ownership issues in build script
+- Fixed upload commands in build.sh (uncommented)
+- Fixed audio device selection page using wrong package (audio instead of mixer)
+- Fixed silent fallback to default audio device - now logs warnings and errors appropriately
+- Fixed missing error recovery in audio device switching - now attempts to restore previous device on failure
+
 
 ### Security
 
----  
+---
 
 ## [v0.1.1]
 
-### Added  
+### Added
 - Settings menu options for editing email address and license key
 - Current email address and license key display on their respective configuration pages
 - License information display on welcome page (email address and license key)
 - Automatic dash formatting for license key input (XXXX-XXXX-XXXX-XXXX format)
 - Database logging support for application logs
 
-### Changed  
+### Changed
 - Improved WiFi configuration page user experience
 - Updated WiFi page background color
 - Enhanced affirmation selection user interface
 
-### Fixed 
+### Fixed
 - Database configuration values not saving due to UNIQUE constraint conflict in `SetConfigValue` function
 
-### Deprecated  
-### Removed  
+### Deprecated
+### Removed
 ### Security
---- 
+---
 
-## [v0.1.0]  
+## [v0.1.0]
 
-### Added  
+### Added
 - Added sqlite database with GORM integration
 - Added new logger package (`internal/logger`) with singleton pattern and consistent API
 - Added database schema for affirmations with `Selected`, `Available`, and `Favorite` fields
@@ -66,7 +93,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `updateCurrentPage()` and `renderFrame()` helper functions
 - Added validation helper functions: `validateNetwork()`, `validateLicenseKey()`, `validateEmailAddress()`, `validateSubscription()`
 
-### Changed  
+### Changed
 - **BREAKING**: Migrated from config package to db package for all configuration storage
 - **PERFORMANCE**: Fixed critical frame timing bug - reduced CPU usage from ~100% to ~12%
 - **PERFORMANCE**: Replaced incorrect SDL performance counter calculation with Go's `time` package for accurate 60 FPS limiting
@@ -98,14 +125,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Pre-calculated space width during initialization
   - Reduced code duplication with extracted helper methods
 
-### Removed  
+### Removed
 - Removed config package dependencies from all page files
 - Removed filesystem-based affirmation loading in favor of database queries
 - Removed all deprecated logging functions and inconsistent logger patterns
 - Removed `p.config` and `p.logger` fields from page structs (now use singletons directly)
 - Removed incorrect SDL performance counter arithmetic that caused frame timing issues
 
-### Fixed  
+### Fixed
 - Fixed critical frame timing bug causing 100% CPU usage on single core
 - Fixed incorrect frame delay calculation using SDL performance counters
 - Fixed memory leaks in `EmailAddressPage` and `LicenseKeyPage` (now properly delete old textures in Update)
@@ -114,21 +141,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed missing note texture cleanup in `Welcome` page Destroy method
 - Fixed logger level mismatches (warnings now use `WarningF`, errors use `ErrorF`)
 - Fixed slow program startup
-- Fixed resource cleanup order in application shutdown  
+- Fixed resource cleanup order in application shutdown
 - Fixed audio filepath in `Scroller`
 
----  
+---
 
-## [v0.0.3]  
+## [v0.0.3]
 
-### Added  
-- Added user manual markdown page  
-- Added logs to volume controls  
+### Added
+- Added user manual markdown page
+- Added logs to volume controls
 
-### Changed   
-- Changed default volume from 0% to 100%  
-- Applied high-pass filter to audio for better speaker compatibility  
+### Changed
+- Changed default volume from 0% to 100%
+- Applied high-pass filter to audio for better speaker compatibility
 
-### Fixed  
-- Fixed audio devices not switching when selected  
+### Fixed
+- Fixed audio devices not switching when selected
 - Fixed volume reseting to zero
