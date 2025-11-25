@@ -142,19 +142,19 @@ run_step "Install Hyprland config for localuser" bash -c '
   chmod 700 /home/localuser/.config
   chmod 700 /home/localuser/.config/hypr
   chown -R localuser:localuser /home/localuser/.config
-  if [[ -f /usr/local/share/radiantwave/hyprland.conf ]]; then
-    cat /usr/local/share/radiantwave/hyprland.conf > /home/localuser/.config/hypr/hyprland.conf
+  if [[ -f /home/localuser/.local/share/radiantwave/hyprland.conf ]]; then
+    cat /home/localuser/.local/share/radiantwave/hyprland.conf > /home/localuser/.config/hypr/hyprland.conf
     chown localuser:localuser /home/localuser/.config/hypr/hyprland.conf
     chmod 600 /home/localuser/.config/hypr/hyprland.conf
   else
-    echo "[WARN] /usr/local/share/radiantwave/hyprland.conf not found"
+    echo "[WARN] /home/localuser/.local/share/radiantwave/hyprland.conf not found"
   fi
 '
 
 # --- NEW: Run post-install hooks (from extracted payload) ---
 run_step "Run post-install hooks" bash -c '
   set -euo pipefail
-  POST_INSTALL_DIR="/usr/local/share/radiantwave/post_install"
+  POST_INSTALL_DIR="/home/localuser/.local/share/radiantwave/post_install"
   export SYSTEM_TYPE="'"$SYSTEM_TYPE"'"
   export CHANNEL="'"$CHANNEL"'"
   export VERSION="'"$VERSION"'"
@@ -207,14 +207,12 @@ EOF
   chmod 644 /etc/sddm.conf
 '
 
-# --- Updater cron (system-wide) ---
-run_step "Add updater cron jobs to /etc/crontab" bash -c '
-  sed -i "/radiantwave-updater/d" /etc/crontab
-  cat >> /etc/crontab << "EOF"
-
-# RadiantWave updater jobs
-@reboot root sleep 10 && /usr/local/bin/radiantwave-updater
-0 0 * * * root /usr/local/bin/radiantwave-updater
+# --- Updater cron (localuser) ---
+run_step "Create localuser crontab for updater" bash -c '
+  # Create crontab for localuser (runs updater on login/reboot)
+  crontab -u localuser - << "EOF"
+# RadiantWave updater job - runs on system startup
+@reboot /home/localuser/.local/bin/radiantwave-updater
 EOF
   systemctl reload cronie.service || systemctl restart cronie.service || true
 '
@@ -233,8 +231,8 @@ run_step "Enable + start core services" bash -c '
 
 # --- Verify kiosk binary ---
 run_step "Verify kiosk binary exists" bash -c '
-  if [[ ! -x /usr/local/bin/radiantwave ]]; then
-    echo "[ERROR] /usr/local/bin/radiantwave is missing or not executable."; exit 1
+  if [[ ! -x /home/localuser/.local/bin/radiantwave ]]; then
+    echo "[ERROR] /home/localuser/.local/bin/radiantwave is missing or not executable."; exit 1
   fi
 '
 

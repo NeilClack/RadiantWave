@@ -163,8 +163,8 @@ mkdir -p "$PKGROOT"
 
 # --- Stage everything from ./system into the pkg root ---
 # This will place:
-#   - /usr/local/bin/* (e.g., kiosk-session, radiantwave-updater [templated below])
-#   - /home/localuser/.config/hypr/hyprland.conf
+#   - /home/localuser/.local/bin/* (radiantwave, radiantwave-updater, scripts/*)
+#   - /home/localuser/.local/share/radiantwave/* (hyprland.conf, assets, etc.)
 # and any other staged paths you keep under ./system/
 # --- Stage everything from ./system into the pkg root (with dotfiles) ---
 mkdir -p "$PKGROOT"
