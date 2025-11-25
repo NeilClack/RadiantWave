@@ -241,8 +241,15 @@ rsync -av --rsync-path="sudo rsync" --chown=www-data:www-data --progress \
   "$OUT" "${OUT}.sha256" VERSION \
   "$REMOTE_USER@$REMOTE_HOST:$REMOTE_LOCATION/"
 
+# Upload setup.sh to the basic directory root (for self-updating)
+BASIC_ROOT="/srv/radiantwave/basic"
+rsync -av --rsync-path="sudo rsync" --chown=www-data:www-data --progress \
+  usb/setup.sh \
+  "$REMOTE_USER@$REMOTE_HOST:$BASIC_ROOT/setup.sh"
+
 ssh "$REMOTE_USER@$REMOTE_HOST" "ls -l $REMOTE_LOCATION"
 
 echo "Uploaded to $REMOTE_HOST:$REMOTE_LOCATION"
+echo "Uploaded setup.sh to $REMOTE_HOST:$BASIC_ROOT/setup.sh"
 echo "Cleaning up local directory"
 rm -rf "$OUT" "$OUT.sha256" "VERSION" "$PKGROOT" radiantwave
