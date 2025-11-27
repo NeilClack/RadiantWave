@@ -1,0 +1,131 @@
+#!/bin/bash
+set -euo pipefail
+
+SCRIPT="$(basename "$0")"
+log() { echo "$*"; logger -t "$SCRIPT" "$*"; }
+die() { log "ERROR: $*"; exit 1; }
+trap 'die "Line $LINENO failed."' ERR
+
+# --- Build-time tokens (templated at build) ---
+CHANNEL="release"         # release|beta|dev
+SYSTEM_TYPE="home" # home|commercial
+
+REPO_BASE="https://repository.radiantwavetech.com/basic"
+BASE_URL="${REPO_BASE}/${CHANNEL}/${SYSTEM_TYPE}"
+
+# --- State paths ---
+STATE_DIR="/usr/local/share/radiantwave"
+LOCAL_VERSION_FILE="${STATE_DIR}/VERSION"
+POST_INSTALL_DIR="/usr/local/bin/scripts"
+
+mkdir -p "$STATE_DIR"
+
+# Helper: find the current local sha256 file (if any)
+find_local_sha() {
+  shopt -s nullglob
+  local files=("$STATE_DIR"/*.sha256)
+  shopt -u nullglob
+  if (( ${#files[@]} == 0 )); then
+    return 1
+  fi
+  # If multiple exist (shouldn't), pick the newest by mtime but warn.
+  if (( ${#files[@]} > 1 )); then
+    log "Warning: multiple .sha256 files found in ${STATE_DIR}; keeping newest for comparison."
+    ls -1t "${files[@]}" | head -n1
+    return 0
+  fi
+  printf '%s\n' "${files[0]}"
+}
+
+# --- Temp workspace ---
+WORKDIR="$(mktemp -d /tmp/rwupdate.XXXXXX)"
+cleanup() { rm -rf "$WORKDIR"; }
+trap cleanup EXIT
+cd "$WORKDIR"
+
+# --- 1) Get upstream VERSION ---
+log "Downloading VERSION from ${BASE_URL}/VERSION"
+curl -fsSLO --retry 3 --retry-connrefused "${BASE_URL}/VERSION"
+UPSTREAM_VERSION="$(< VERSION)"
+[[ -n "$UPSTREAM_VERSION" ]] || die "Upstream VERSION is empty."
+
+log "Upstream VERSION: ${UPSTREAM_VERSION}"
+if [[ -f "$LOCAL_VERSION_FILE" ]]; then
+  log "Local VERSION: $(< "$LOCAL_VERSION_FILE")"
+else
+  log "Local VERSION: <none>"
+fi
+
+# --- 2) Get upstream checksum matching VERSION ---
+BASE_TARBALL="radiantwave-${SYSTEM_TYPE}-${UPSTREAM_VERSION}.tar.xz"
+SUM_FILE="${BASE_TARBALL}.sha256"
+
+log "Downloading checksum ${SUM_FILE}"
+curl -fsSLO --retry 3 --retry-connrefused "${BASE_URL}/${SUM_FILE}"
+
+UPSTREAM_SHA_LINE="$(< "$SUM_FILE")"
+[[ -n "$UPSTREAM_SHA_LINE" ]] || die "Upstream checksum file is empty."
+
+# --- 3) Compare upstream checksum vs local recorded checksum file (content) ---
+LOCAL_SHA_FILE="$(find_local_sha || true)"
+if [[ -n "${LOCAL_SHA_FILE:-}" ]]; then
+  if cmp -s "$SUM_FILE" "$LOCAL_SHA_FILE"; then
+    log "Checksums match. Already up to date. Cleaning temp files and exiting."
+    # We downloaded VERSION and SUM_FILE into WORKDIR; both will be removed by trap/cleanup.
+    exit 0
+  fi
+  log "New checksum detected (local: $(basename "$LOCAL_SHA_FILE"), upstream: $(basename "$SUM_FILE")). Proceeding with update."
+else
+  log "No local checksum found. Proceeding with update."
+fi
+
+# --- 4) Download tarball and verify ---
+log "Downloading ${BASE_TARBALL}"
+curl -fsSLO --retry 3 --retry-connrefused "${BASE_URL}/${BASE_TARBALL}"
+
+log "Verifying tarball integrity"
+sha256sum -c "$SUM_FILE" || die "Checksum verification FAILED for ${BASE_TARBALL}"
+log "Checksum OK."
+
+# --- 5) Install (extract to /) ---
+log "Unpacking ${BASE_TARBALL} to /"
+tar --no-same-owner -xJf "$BASE_TARBALL" -C /
+
+# --- 6) Persist new state ---
+# Write new VERSION
+printf "%s\n" "$UPSTREAM_VERSION" > "$LOCAL_VERSION_FILE"
+
+# Remove old sha256(s), then move the new one in
+shopt -s nullglob
+OLD_SHA_FILES=("$STATE_DIR"/*.sha256)
+if (( ${#OLD_SHA_FILES[@]} > 0 )); then
+  log "Removing old checksum file(s) from ${STATE_DIR}"
+  rm -f "${OLD_SHA_FILES[@]}"
+fi
+shopt -u nullglob
+
+# Move the downloaded versioned sha256 in as the single source of truth
+log "Storing new checksum: ${SUM_FILE} -> ${STATE_DIR}/"
+mv -f "$SUM_FILE" "$STATE_DIR/"
+
+log "Installation complete (version ${UPSTREAM_VERSION}, channel ${CHANNEL})."
+
+# --- 7) Run post-install scripts if present ---
+if [[ -d "$POST_INSTALL_DIR" ]]; then
+  shopt -s nullglob
+  # Run scripts in lexicographical order (e.g., 10-foo.sh, 20-bar.sh)
+  scripts=("$POST_INSTALL_DIR"/*.sh)
+  IFS=$'\n' sorted_scripts=($(printf '%s\n' "${scripts[@]}" | sort))
+  for script in "${sorted_scripts[@]}"; do
+    [[ -f "$script" ]] || continue
+    log "Running post-install: $script"
+    bash "$script"
+  done
+  shopt -u nullglob
+else
+  log "No post-install directory found at ${POST_INSTALL_DIR}; skipping."
+fi
+
+# --- 8) Reboot only if update happened ---
+log "Rebooting to apply update..."
+/usr/bin/systemctl reboot
