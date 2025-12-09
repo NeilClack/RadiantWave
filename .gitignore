@@ -35,7 +35,6 @@ radiantwave_*_*/
 
 # Binaries
 *.deb
-.radiantwave/*
 *.pprof
 *.log
 assets/audio/*.wav
@@ -48,10 +47,3 @@ assets/audio/*.wav
 *.7z
 *.gz
 *.xz
-VERSION
-pkgroot/
-build/
-radiantwave
-
-# personal notes:
-notes.txt

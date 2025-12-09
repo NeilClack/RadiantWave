@@ -1,0 +1,8 @@
+// Allow kiosk user to run radiantwave install helper without password
+polkit.addRule(function(action, subject) {
+    if (action.id == "org.freedesktop.policykit.exec" &&
+        action.lookup("program") == "/usr/local/bin/radiantwave-installer.sh" &&
+        subject.user == "kiosk") {
+        return polkit.Result.YES;
+    }
+});
