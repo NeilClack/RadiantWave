@@ -38,7 +38,7 @@ SHARE_DIR = Path("/usr/local/share/radiantwave")
 UPDATER_PATH = BIN_DIR / "radiantwave-updater.py"
 BINARY_PATH = BIN_DIR / "radiantwave"
 SCRIPTS_DIR = BIN_DIR / "scripts"
-INSTALL_HELPER = BIN_DIR / "radiantwave-install-helper.sh"
+INSTALL_HELPER = BIN_DIR / "radiantwave-installer.sh"
 
 # Version tracking
 VERSION_FILE = SHARE_DIR / "VERSION"
