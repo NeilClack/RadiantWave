@@ -131,11 +131,7 @@ func Run() error {
 
 // initializeApplicationDirectory creates and returns the application data directory path
 func initializeApplicationDirectory() (string, error) {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("could not determine user home directory: %w", err)
-	}
-	appDataDir := filepath.Join(homeDir, ".local", "share", "radiantwave")
+	appDataDir := filepath.Join("/usr", "local", "share", "radiantwave")
 
 	// Create the directory if it doesn't exist
 	if err := os.MkdirAll(appDataDir, 0755); err != nil {

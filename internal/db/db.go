@@ -112,20 +112,14 @@ func seedDefaults() error {
 		return err
 	}
 	if count == 0 {
-		// Get user home directory for user-local paths
-		homeDir, err := os.UserHomeDir()
-		if err != nil {
-			log.Println("Error getting user home directory:", err)
-			return err
-		}
-		localShareDir := filepath.Join(homeDir, ".local", "share", "radiantwave")
+		shareDir := filepath.Join("/usr", "local", "share", "radiantwave")
 
 		for key, value := range defaultConfigValues {
 			// Replace placeholder paths with user-local paths
 			if key == "assets_dir" {
-				value = localShareDir
+				value = shareDir
 			} else if key == "log_dir" {
-				value = filepath.Join(localShareDir, "logs.log")
+				value = filepath.Join(shareDir, "logs.log")
 			}
 			config := Config{Key: key, Value: value}
 			if err := DB.Create(&config).Error; err != nil {
