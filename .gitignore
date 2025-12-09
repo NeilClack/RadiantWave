@@ -47,3 +47,9 @@ assets/audio/*.wav
 *.7z
 *.gz
 *.xz
+
+# Build artifacts
+radiantwave-*.tar.xz
+radiantwave-*.tar.xz.sha256
+VERSION
+system/usr/local/bin/radiantwave
