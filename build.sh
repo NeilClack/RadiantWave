@@ -22,19 +22,27 @@ ARGUMENTS:
 
 OPTIONS:
   -h, --help      Show this help message and exit
+  --local         Build locally without uploading to repository
 
 EXAMPLES:
-  build.sh dev         # Build radiantwave-dev package
-  build.sh release     # Build radiantwave package
+  build.sh dev              # Build and upload to dev channel
+  build.sh release          # Build and upload to release channel
+  build.sh --local dev      # Build locally only (no upload)
 EOF
 }
 
 # --- Parse args ---
+LOCAL_ONLY=false
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
   -h | --help)
     show_help
     exit 0
+    ;;
+  --local)
+    LOCAL_ONLY=true
+    shift
     ;;
   *)
     RELEASE_TYPE="$1"
@@ -79,6 +87,11 @@ else
   CHANNEL="release"
 fi
 
+# --- Repository settings ---
+REPO_USER="nclack"
+REPO_HOST="134.122.8.168"
+REPO_PATH="/srv/radiantwave/apt"
+
 # --- Prompt confirmation ---
 echo "=================================================="
 echo " RadiantWave Build Confirmation"
@@ -87,6 +100,12 @@ echo " Package Name: $PACKAGE_NAME"
 echo " Version     : $VERSION"
 echo " Channel     : $CHANNEL"
 echo " Conflicts   : $CONFLICTS"
+if [[ "$LOCAL_ONLY" == true ]]; then
+  echo " Mode        : LOCAL ONLY (no upload)"
+else
+  echo " Mode        : Build and Upload to Repository"
+  echo " Repository  : $REPO_USER@$REPO_HOST:$REPO_PATH"
+fi
 echo "=================================================="
 read -rp "Proceed with build? (y/N): " CONFIRM
 if [[ ! "$CONFIRM" =~ ^[Yy]$ ]]; then
@@ -187,20 +206,58 @@ echo "✓ Generated SHA256 checksum"
 # Clean up staging directory
 rm -rf ./pkg
 
-echo ""
-echo "=================================================="
-echo " Build Complete!"
-echo "--------------------------------------------------"
-echo " Package     : $DEB_FILE"
-echo " Version     : $VERSION"
-echo " Channel     : $CHANNEL"
-echo " Location    : $(pwd)/$DEB_FILE"
-echo "=================================================="
-echo ""
-echo "Installation commands:"
-echo "  sudo dpkg -i $DEB_FILE"
-echo "  sudo apt install -f  # Fix any dependency issues"
-echo ""
-echo "Or add to apt repository and install with:"
-echo "  sudo apt update"
-echo "  sudo apt install $PACKAGE_NAME"
+# --- Upload to repository (if not local-only) ---
+if [[ "$LOCAL_ONLY" == false ]]; then
+  echo ""
+  echo "Uploading to repository..."
+
+  # Upload .deb to server
+  if ! scp "$DEB_FILE" "${REPO_USER}@${REPO_HOST}:/tmp/"; then
+    echo "ERROR: Failed to upload package to server" >&2
+    exit 1
+  fi
+
+  echo "✓ Uploaded $DEB_FILE to server"
+
+  # Add to repository using reprepro
+  echo "Adding package to $CHANNEL repository..."
+  if ! ssh "${REPO_USER}@${REPO_HOST}" \
+    "reprepro -b $REPO_PATH includedeb $CHANNEL /tmp/$DEB_FILE && rm /tmp/$DEB_FILE"; then
+    echo "ERROR: Failed to add package to repository" >&2
+    exit 1
+  fi
+
+  echo "✓ Added to repository"
+
+  echo ""
+  echo "=================================================="
+  echo " Build & Upload Complete!"
+  echo "--------------------------------------------------"
+  echo " Package     : $DEB_FILE"
+  echo " Version     : $VERSION"
+  echo " Channel     : $CHANNEL"
+  echo " Repository  : $REPO_USER@$REPO_HOST"
+  echo "=================================================="
+  echo ""
+  echo "Installation on client systems:"
+  echo "  sudo apt update"
+  echo "  sudo apt install $PACKAGE_NAME"
+  echo ""
+  echo "Or upgrade existing installation:"
+  echo "  sudo apt update"
+  echo "  sudo apt upgrade $PACKAGE_NAME"
+else
+  echo ""
+  echo "=================================================="
+  echo " Build Complete (Local Only)!"
+  echo "--------------------------------------------------"
+  echo " Package     : $DEB_FILE"
+  echo " Version     : $VERSION"
+  echo " Channel     : $CHANNEL"
+  echo " Location    : $(pwd)/$DEB_FILE"
+  echo "=================================================="
+  echo ""
+  echo "Installation commands:"
+  echo "  sudo dpkg -i $DEB_FILE"
+  echo "  sudo apt install -f  # Fix any dependency issues"
+fi
