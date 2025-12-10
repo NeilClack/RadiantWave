@@ -29,7 +29,7 @@ import urllib.request
 import urllib.error
 
 # Configuration
-UPDATE_SERVER = "https://repository.radiantwavetech.com"
+UPDATE_SERVER = "https://repository.radiantwavetech.com/release"
 CURRENT_USER = "kiosk"
 
 # System paths
