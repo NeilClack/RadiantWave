@@ -24,7 +24,7 @@ from datetime import datetime
 
 # Configuration
 CURRENT_USER = "kiosk"
-PACKAGE_NAME = "__CHANNEL__"  # Will be templated to "radiantwave" or "radiantwave-dev"
+PACKAGE_NAME = "radiantwave-dev"  # Will be templated to "radiantwave" or "radiantwave-dev"
 
 # Paths
 SHARE_DIR = Path("/usr/local/share/radiantwave")

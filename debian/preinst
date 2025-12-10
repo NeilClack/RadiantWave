@@ -1,0 +1,12 @@
+#!/bin/bash
+# Pre-installation script for RadiantWave
+# Runs BEFORE the package is unpacked and installed
+
+set -e
+
+echo "RadiantWave pre-install: Preparing system..."
+
+# Nothing to do in preinst yet
+# Network Manager configuration happens in postinst after it's installed
+
+exit 0

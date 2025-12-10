@@ -1,9 +1,68 @@
 #!/bin/bash
 set -e
 
-# Run post-installation tasks
+echo "RadiantWave post-install: Configuring system..."
+
+# Configure NetworkManager and netplan
+configure_network_manager() {
+    echo "Configuring NetworkManager..."
+
+    # Check if netplan is installed and being used
+    if command -v netplan &> /dev/null; then
+        NETPLAN_DIR="/etc/netplan"
+
+        if [ -d "$NETPLAN_DIR" ]; then
+            echo "Found netplan, configuring to use NetworkManager..."
+
+            # Create or update netplan configuration for NetworkManager
+            cat > "$NETPLAN_DIR/01-network-manager-all.yaml" <<EOF
+# Managed by RadiantWave package
+# This configuration delegates network management to NetworkManager
+network:
+  version: 2
+  renderer: NetworkManager
+EOF
+
+            # Apply netplan changes
+            if netplan apply 2>/dev/null; then
+                echo "✓ Netplan configured to use NetworkManager"
+            else
+                echo "⚠ Warning: Could not apply netplan changes (may need manual intervention)"
+            fi
+        fi
+    fi
+
+    # Enable and start NetworkManager service
+    if systemctl is-enabled NetworkManager.service &> /dev/null; then
+        echo "✓ NetworkManager service already enabled"
+    else
+        echo "Enabling NetworkManager service..."
+        systemctl enable NetworkManager.service || echo "⚠ Warning: Could not enable NetworkManager"
+    fi
+
+    if systemctl is-active NetworkManager.service &> /dev/null; then
+        echo "✓ NetworkManager service already running"
+    else
+        echo "Starting NetworkManager service..."
+        systemctl start NetworkManager.service || echo "⚠ Warning: Could not start NetworkManager"
+    fi
+
+    # Restart NetworkManager to ensure it picks up the new configuration
+    echo "Restarting NetworkManager..."
+    systemctl restart NetworkManager.service || echo "⚠ Warning: Could not restart NetworkManager"
+
+    echo "✓ NetworkManager configuration complete"
+}
+
+# Run NetworkManager configuration
+configure_network_manager
+
+# Run application-specific post-installation tasks
 if [ -x /usr/local/bin/scripts/post-install.sh ]; then
     /usr/local/bin/scripts/post-install.sh
 fi
 
+echo "✓ RadiantWave post-install complete"
+
 exit 0
+

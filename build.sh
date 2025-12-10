@@ -157,13 +157,15 @@ sed -e "s/__PACKAGE_NAME__/${PACKAGE_NAME}/g" \
 
 echo "✓ Created DEBIAN/control"
 
-# Copy postinst and prerm scripts
+# Copy package maintainer scripts
+cp debian/preinst "$PACKAGE_DIR/DEBIAN/preinst"
 cp debian/postinst "$PACKAGE_DIR/DEBIAN/postinst"
 cp debian/prerm "$PACKAGE_DIR/DEBIAN/prerm"
+chmod 755 "$PACKAGE_DIR/DEBIAN/preinst"
 chmod 755 "$PACKAGE_DIR/DEBIAN/postinst"
 chmod 755 "$PACKAGE_DIR/DEBIAN/prerm"
 
-echo "✓ Copied DEBIAN scripts"
+echo "✓ Copied DEBIAN scripts (preinst, postinst, prerm)"
 
 # Build the .deb package
 DEB_FILE="${PACKAGE_NAME}_${VERSION}_amd64.deb"
