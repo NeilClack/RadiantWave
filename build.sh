@@ -170,8 +170,14 @@ dpkg-deb --build "$PACKAGE_DIR" "$DEB_FILE"
 
 echo "✓ Built Debian package: $DEB_FILE"
 
+# Set proper permissions on the .deb file (readable by all, including _apt user)
+chmod 644 "$DEB_FILE"
+
+echo "✓ Set package permissions (644)"
+
 # Generate SHA256 checksum
 sha256sum "$DEB_FILE" > "${DEB_FILE}.sha256"
+chmod 644 "${DEB_FILE}.sha256"
 
 echo "✓ Generated SHA256 checksum"
 
