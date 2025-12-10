@@ -110,7 +110,7 @@ echo "✓ Built binary: $BINARY_OUTPUT"
 # --- Set permissions ---
 chmod 755 "$BINARY_OUTPUT"
 chmod 755 ./system/usr/local/bin/radiantwave-updater.py
-chmod 755 ./system/usr/local/bin/scripts/radiantwave-installer.sh
+chmod 755 ./system/usr/local/bin/scripts/post-install.sh
 chmod 644 ./system/etc/polkit-1/rules.d/99-radiantwave-updater.rules
 
 # Set asset permissions
