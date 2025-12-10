@@ -1,0 +1,9 @@
+#!/bin/bash
+set -e
+
+# Run post-installation tasks
+if [ -x /usr/local/bin/scripts/post-install.sh ]; then
+    /usr/local/bin/scripts/post-install.sh
+fi
+
+exit 0

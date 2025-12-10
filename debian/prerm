@@ -1,0 +1,6 @@
+#!/bin/bash
+set -e
+
+# Pre-removal cleanup can go here if needed
+
+exit 0

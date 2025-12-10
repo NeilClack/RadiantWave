@@ -1,8 +1,27 @@
-// Allow kiosk user to run radiantwave install helper without password
+// Allow kiosk user to run apt update and apt install for radiantwave packages
 polkit.addRule(function(action, subject) {
     if (action.id == "org.freedesktop.policykit.exec" &&
-        action.lookup("program") == "/usr/local/bin/radiantwave-installer.sh" &&
         subject.user == "kiosk") {
-        return polkit.Result.YES;
+
+        var program = action.lookup("program");
+
+        // Allow apt update
+        if (program == "/usr/bin/apt") {
+            var cmdline = action.lookup("command_line");
+
+            // Allow: apt update
+            if (cmdline && cmdline.indexOf("update") >= 0) {
+                return polkit.Result.YES;
+            }
+
+            // Allow: apt install --only-upgrade radiantwave
+            // Allow: apt install --only-upgrade radiantwave-dev
+            if (cmdline &&
+                cmdline.indexOf("install") >= 0 &&
+                cmdline.indexOf("--only-upgrade") >= 0 &&
+                (cmdline.indexOf("radiantwave-dev") >= 0 || cmdline.indexOf("radiantwave") >= 0)) {
+                return polkit.Result.YES;
+            }
+        }
     }
 });

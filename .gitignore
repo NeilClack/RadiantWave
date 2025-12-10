@@ -51,5 +51,10 @@ assets/audio/*.wav
 # Build artifacts
 radiantwave-*.tar.xz
 radiantwave-*.tar.xz.sha256
+radiantwave_*.deb
+radiantwave_*.deb.sha256
+radiantwave-dev_*.deb
+radiantwave-dev_*.deb.sha256
 VERSION
 system/usr/local/bin/radiantwave
+pkg/

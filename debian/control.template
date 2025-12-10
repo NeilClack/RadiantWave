@@ -1,0 +1,14 @@
+Package: __PACKAGE_NAME__
+Version: __VERSION__
+Section: graphics
+Priority: optional
+Architecture: amd64
+Depends: libsdl2-2.0-0, libsdl2-ttf-2.0-0, libgl1, libsqlite3-0, polkit-1, python3
+Conflicts: __CONFLICTS__
+Replaces: __CONFLICTS__
+Maintainer: RadiantWave Tech <nclack@radiantwavetech.com>
+Description: RadiantWave kiosk application (__CHANNEL__ channel)
+ Fullscreen SDL2/OpenGL affirmation player for kiosk systems.
+ Displays affirmations with audio playback and animated visual patterns.
+ .
+ This is the __CHANNEL__ channel package.
