@@ -17,11 +17,13 @@ These packages conflict with each other (only one can be installed at a time).
 ### Building Packages
 
 ```bash
-# Build dev package (version = 0.0.{commit}, e.g., 0.0.ab01651)
-./build.sh dev
+# Build and upload to repository (default)
+./build.sh dev              # Dev channel (auto-upload)
+./build.sh release          # Release channel (auto-upload)
 
-# Build release package (version = git tag without 'v', e.g., 2.0.0)
-./build.sh release
+# Local build only (no upload)
+./build.sh --local dev      # For testing
+./build.sh --local release  # For testing
 ```
 
 The build script:
@@ -33,6 +35,10 @@ The build script:
 6. Generates DEBIAN/control file with package metadata and dependencies
 7. Builds .deb package using `dpkg-deb`
 8. Generates SHA256 checksum
+9. **Uploads to repository** (unless `--local` flag used):
+   - SCPs .deb to server (nclack@134.122.8.168)
+   - Runs `reprepro includedeb` to add to repository
+   - Cleans up temp files
 
 **Output files:**
 - `radiantwave_2.0.0_amd64.deb` (release)

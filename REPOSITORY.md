@@ -130,24 +130,46 @@ reprepro -b /srv/radiantwave/apt includedeb release /backups/radiantwave_1.9.0_a
 
 ## Automated Upload Workflow
 
-### Option 1: Manual Upload via SCP
+### Option 1: Automated (Built into build.sh)
 
-From development machine:
+The `build.sh` script automatically uploads and adds packages to the repository:
 
 ```bash
-# Build package
+# Build and auto-upload to dev repository
+./build.sh dev
+
+# Build and auto-upload to release repository
 ./build.sh release
 
+# Build locally without uploading (for testing)
+./build.sh --local dev
+```
+
+**What happens automatically:**
+1. Package is built locally
+2. .deb is uploaded via SCP to server's /tmp/
+3. `reprepro includedeb` is run via SSH
+4. Temp file is cleaned up
+5. Package is immediately available in repository
+
+### Option 2: Manual Upload via SCP
+
+If you need manual control:
+
+```bash
+# Build package locally
+./build.sh --local release
+
 # Upload to server
-scp radiantwave_2.0.0_amd64.deb user@repository.radiantwavetech.com:/tmp/
+scp radiantwave_2.0.0_amd64.deb nclack@134.122.8.168:/tmp/
 
 # SSH to server and add to repository
-ssh user@repository.radiantwavetech.com
+ssh nclack@134.122.8.168
 reprepro -b /srv/radiantwave/apt includedeb release /tmp/radiantwave_2.0.0_amd64.deb
 rm /tmp/radiantwave_2.0.0_amd64.deb
 ```
 
-### Option 2: Upload Script
+### Option 3: Server-Side Upload Script
 
 Create `/srv/radiantwave/bin/add-package.sh` on server:
 
