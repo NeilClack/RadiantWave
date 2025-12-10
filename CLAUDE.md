@@ -17,7 +17,7 @@ These packages conflict with each other (only one can be installed at a time).
 ### Building Packages
 
 ```bash
-# Build dev package (version = commit hash, e.g., ab01651)
+# Build dev package (version = 0.0.{commit}, e.g., 0.0.ab01651)
 ./build.sh dev
 
 # Build release package (version = git tag without 'v', e.g., 2.0.0)
@@ -36,8 +36,9 @@ The build script:
 
 **Output files:**
 - `radiantwave_2.0.0_amd64.deb` (release)
-- `radiantwave-dev_ab01651_amd64.deb` (dev)
+- `radiantwave-dev_0.0.ab01651_amd64.deb` (dev)
 - Corresponding `.sha256` files
+- All files set to 644 permissions (readable by _apt user)
 
 ### Installation
 
@@ -210,7 +211,7 @@ debian/
 
 **Version Injection:** Git version is injected at build time via ldflags: `-X 'radiantwavetech.com/radiantwave/internal/page.GitVersion=${VERSION}'`
 - Release builds: Use git tag without 'v' prefix (e.g., `2.0.0` from tag `v2.0.0`)
-- Dev builds: Use short commit hash (e.g., `ab01651`)
+- Dev builds: Use `0.0.{commit}` format (e.g., `0.0.ab01651`) - the `0.0.` prefix ensures Debian compliance (versions must start with digit)
 
 **Auto-updater:** Python script that uses apt to check for and install updates:
 - Runs `pkexec apt update` to refresh package lists
