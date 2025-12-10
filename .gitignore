@@ -58,3 +58,4 @@ radiantwave-dev_*.deb.sha256
 VERSION
 system/usr/local/bin/radiantwave
 pkg/
+system/usr/local/share/radiantwave/audio/7.83.wav
