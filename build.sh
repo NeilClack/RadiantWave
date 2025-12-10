@@ -61,7 +61,8 @@ esac
 # --- Version / Tag / Package Name ---
 if [[ "$RELEASE_TYPE" == "dev" ]]; then
   COMMIT_HASH="$(git rev-parse --short=7 HEAD 2>/dev/null || echo unknown)"
-  VERSION="${COMMIT_HASH}"
+  # Prepend 0.0. to ensure version starts with digit (Debian requirement)
+  VERSION="0.0.${COMMIT_HASH}"
   PACKAGE_NAME="radiantwave-dev"
   CONFLICTS="radiantwave"
   CHANNEL="dev"
