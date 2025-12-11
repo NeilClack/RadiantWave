@@ -1,25 +1,32 @@
-// Allow kiosk user to run apt update and apt install for radiantwave packages
+// Allow kiosk user to run apt update, apt install for radiantwave packages,
+// and restart getty for application reloading
 polkit.addRule(function(action, subject) {
     if (action.id == "org.freedesktop.policykit.exec" &&
         subject.user == "kiosk") {
 
         var program = action.lookup("program");
+        var cmdline = action.lookup("command_line");
 
         // Allow apt update
         if (program == "/usr/bin/apt") {
-            var cmdline = action.lookup("command_line");
-
-            // Allow: apt update
             if (cmdline && cmdline.indexOf("update") >= 0) {
                 return polkit.Result.YES;
             }
 
-            // Allow: apt install --only-upgrade radiantwave
-            // Allow: apt install --only-upgrade radiantwave-dev
+            // Allow: apt install --only-upgrade radiantwave[-dev]
             if (cmdline &&
                 cmdline.indexOf("install") >= 0 &&
                 cmdline.indexOf("--only-upgrade") >= 0 &&
-                (cmdline.indexOf("radiantwave-dev") >= 0 || cmdline.indexOf("radiantwave") >= 0)) {
+                cmdline.indexOf("radiantwave") >= 0) {
+                return polkit.Result.YES;
+            }
+        }
+
+        // Allow systemctl restart getty@tty1.service
+        if (program == "/usr/bin/systemctl") {
+            if (cmdline &&
+                cmdline.indexOf("restart") >= 0 &&
+                cmdline.indexOf("getty@tty1.service") >= 0) {
                 return polkit.Result.YES;
             }
         }
