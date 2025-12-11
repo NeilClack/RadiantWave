@@ -281,7 +281,7 @@ func (app *Application) initializeAudio() error {
 		return fmt.Errorf("failed to get audio device name: %w", err)
 	}
 	if err := mixer.Init(audioDevice); err != nil {
-		return fmt.Errorf("failed to initialize audio mixer: %w", err)
+		fmt.Printf("unable to initialize audio devices: %v", err)
 	}
 	return nil
 }
