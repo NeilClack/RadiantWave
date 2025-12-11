@@ -280,6 +280,16 @@ func (app *Application) initializeAudio() error {
 	if err != nil {
 		return fmt.Errorf("failed to get audio device name: %w", err)
 	}
+
+	// I have opted to explicitly NOT panic here, and only log an error message.
+	// On a brand new system, the audio device will not be set, and therefore
+	// the mixer.Init(audioDevice: string) function will return an error.
+	// This is both expected behavior, as well as blocking behavior.
+	// Since no device is set yet, it's a brand new system, we never start up
+	// and we end up locked in a "boot loop", which is really an application start loop.
+	// We panic, it shuts down, get's restarted by getty, and panics again.
+	// Users will need to explicitly set audio devices on first startup, or, the mixer code
+	// might handle such a situation already. Either way, DO NOT PANIC HERE OR RETURN AN ERROR
 	if err := mixer.Init(audioDevice); err != nil {
 		fmt.Printf("unable to initialize audio devices: %v", err)
 	}
