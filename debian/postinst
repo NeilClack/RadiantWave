@@ -51,6 +51,10 @@ EOF
     echo "Restarting NetworkManager..."
     systemctl restart NetworkManager.service || echo "⚠ Warning: Could not restart NetworkManager"
 
+    # Disable networkd to speed up boot times and disable the networkd startup timeout
+    echo "Disabling networkd..."
+    systemctl disable systemd-networkd-wait-online.service
+
     echo "✓ NetworkManager configuration complete"
 }
 
