@@ -80,6 +80,8 @@ func Init(wantedDevice string) error {
 		currentVolume = lastVolume
 	}
 
+	mix.VolumeMusic(currentVolume)
+
 	inited = true
 	return nil
 }
