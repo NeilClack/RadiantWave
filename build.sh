@@ -141,16 +141,6 @@ find ./system/usr/local/share/radiantwave -type f -exec chmod 644 {} \;
 
 echo "✓ Set file permissions"
 
-# --- Template radiantwave-updater.py ---
-UPDATER_PATH="./system/usr/local/bin/radiantwave-updater.py"
-if [[ -f "$UPDATER_PATH" ]]; then
-  sed -i -e "s|__CHANNEL__|${PACKAGE_NAME}|g" "$UPDATER_PATH"
-  echo "✓ Templated updater script with package name: $PACKAGE_NAME"
-else
-  echo "ERROR: $UPDATER_PATH not found" >&2
-  exit 1
-fi
-
 # --- VERSION files ---
 echo "${VERSION}" > ./system/usr/local/share/radiantwave/VERSION
 echo "${VERSION}" > ./VERSION
@@ -168,6 +158,16 @@ echo "✓ Created package directory: $PACKAGE_DIR"
 cp -r ./system/* "$PACKAGE_DIR/"
 
 echo "✓ Copied system files to package"
+
+# --- Template radiantwave-updater.py (in package, not source) ---
+UPDATER_PKG_PATH="$PACKAGE_DIR/usr/local/bin/radiantwave-updater.py"
+if [[ -f "$UPDATER_PKG_PATH" ]]; then
+  sed -i -e "s|__CHANNEL__|${PACKAGE_NAME}|g" "$UPDATER_PKG_PATH"
+  echo "✓ Templated updater script with package name: $PACKAGE_NAME"
+else
+  echo "ERROR: $UPDATER_PKG_PATH not found" >&2
+  exit 1
+fi
 
 # Create control file from template
 sed -e "s/__PACKAGE_NAME__/${PACKAGE_NAME}/g" \
