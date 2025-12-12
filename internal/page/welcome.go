@@ -157,7 +157,8 @@ func (p *Welcome) Init(app ApplicationInterface) error {
 	logger.InfoF("Created title texture")
 
 	// Create version texture
-	p.version, err = NewStringItem(version, font, colors.White)
+	versionString := "Version: " + version
+	p.version, err = NewStringItem(versionString, font, colors.White)
 	if err != nil {
 		return fmt.Errorf("unable to create version string texture: %w", err)
 	}
