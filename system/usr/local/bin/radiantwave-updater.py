@@ -190,6 +190,8 @@ def main():
     if not check_network():
         logger.log("No internet connection, skipping update")
         return 0
+    
+    logger.log("Connected to the internet, continuing...")
 
     # Sync tailscale hostname with license key
     sync_tailscale_hostname()
