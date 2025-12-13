@@ -3,7 +3,7 @@ Version: __VERSION__
 Section: graphics
 Priority: optional
 Architecture: amd64
-Depends: libsdl2-2.0-0, libsdl2-ttf-2.0-0, libsdl2-image-2.0-0, libsdl2-mixer-2.0-0, libgl1, sqlite3, policykit-1, python3, network-manager, cage
+Depends: libsdl2-2.0-0, libsdl2-ttf-2.0-0, libsdl2-image-2.0-0, libsdl2-mixer-2.0-0, libgl1, sqlite3, policykit-1, python3, network-manager, cage, tailscale
 Conflicts: __CONFLICTS__
 Replaces: __CONFLICTS__
 Maintainer: RadiantWave Tech <nclack@radiantwavetech.com>
