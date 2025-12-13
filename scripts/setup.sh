@@ -41,6 +41,20 @@ apt update
 echo "Upgrading system packages..."
 apt upgrade -y
 
+echo "Installing Tailscale..."
+if ! command -v tailscale &> /dev/null; then
+    curl -fsSL https://tailscale.com/install.sh | sh
+else
+    echo "✓ Tailscale already installed"
+fi
+
+echo "Setting Tailscale operator..."
+if tailscale set --operator=kiosk; then
+    echo "✓ Tailscale operator set to kiosk"
+else
+    echo "⚠ Warning: Could not set Tailscale operator"
+fi
+
 echo "Installing RadiantWave..."
 apt install -y radiantwave
 
