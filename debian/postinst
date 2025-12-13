@@ -3,6 +3,35 @@ set -e
 
 echo "RadiantWave post-install: Configuring system..."
 
+# =========================================
+# HEADSCALE/TAILSCALE CONFIGURATION
+# =========================================
+HEADSCALE_URL="https://headscale.radiantwavetech.com"
+HEADSCALE_AUTHKEY="803130d5b2e38bffa9fa5b6921a3d6403100e2e30fea1bd5"
+# =========================================
+
+# Configure Tailscale connection to Headscale
+configure_tailscale() {
+    echo "Configuring Tailscale..."
+
+    # Connect to Headscale server
+    if tailscale up --login-server "$HEADSCALE_URL" --authkey "$HEADSCALE_AUTHKEY"; then
+        echo "✓ Tailscale connected to Headscale"
+    else
+        echo "⚠ Warning: Could not connect to Headscale (may need manual intervention)"
+        return
+    fi
+
+    # Set operator to kiosk so the kiosk user can manage tailscale without sudo
+    if tailscale set --operator=kiosk; then
+        echo "✓ Tailscale operator set to kiosk"
+    else
+        echo "⚠ Warning: Could not set Tailscale operator"
+    fi
+
+    echo "✓ Tailscale configuration complete"
+}
+
 # Configure NetworkManager and netplan
 configure_network_manager() {
     echo "Configuring NetworkManager..."
@@ -58,8 +87,11 @@ EOF
     echo "✓ NetworkManager configuration complete"
 }
 
-# Run NetworkManager configuration
+# Run NetworkManager configuration (needed for network before Tailscale)
 configure_network_manager
+
+# Run Tailscale configuration
+configure_tailscale
 
 # Run application-specific post-installation tasks
 if [ -x /usr/local/bin/scripts/post-install.sh ]; then
@@ -69,4 +101,3 @@ fi
 echo "✓ RadiantWave post-install complete"
 
 exit 0
-
