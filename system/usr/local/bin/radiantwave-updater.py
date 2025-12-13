@@ -118,7 +118,7 @@ def get_license_key():
     
     try:
         conn = sqlite3.connect(DB_PATH)
-        cursor = conn.execute("SELECT value FROM settings WHERE key = 'license_key'")
+        cursor = conn.execute("SELECT value FROM configs WHERE key = 'license_key'")
         row = cursor.fetchone()
         conn.close()
         return row[0] if row and row[0] else None
