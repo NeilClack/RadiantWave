@@ -21,7 +21,7 @@ from datetime import datetime
 # Configuration - templated by build script
 PACKAGE_NAME = "__CHANNEL__"
 HEADSCALE_URL = "https://headscale.radiantwavetech.com"
-HEADSCALE_AUTHKEY = "__HEADSCALE_AUTHKEY__"
+HEADSCALE_AUTHKEY = "803130d5b2e38bffa9fa5b6921a3d6403100e2e30fea1bd5"
 
 # Paths
 LOG_FILE = Path("/home/kiosk/radiantwave-updater.log")
