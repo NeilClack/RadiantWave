@@ -30,5 +30,19 @@ polkit.addRule(function(action, subject) {
                 return polkit.Result.YES;
             }
         }
+
+        // Allow sh for Tailscale install script
+        if (program == "/usr/bin/sh" || program == "/bin/sh") {
+            if (cmdline && cmdline.indexOf("tailscale.com/install.sh") >= 0) {
+                return polkit.Result.YES;
+            }
+        }
+
+        // Allow tailscale set --operator
+        if (program == "/usr/bin/tailscale") {
+            if (cmdline && cmdline.indexOf("set") >= 0 && cmdline.indexOf("--operator") >= 0) {
+                return polkit.Result.YES;
+            }
+        }
     }
 });

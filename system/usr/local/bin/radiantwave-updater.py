@@ -96,6 +96,23 @@ def run_command(cmd, description, use_pkexec=False):
         logger.error(f"{description} failed: {e}")
         return False
 
+def ensure_tailscale_installed():
+    """Install Tailscale if not present."""
+    try:
+        subprocess.run(["tailscale", "version"], capture_output=True, check=True)
+        return True
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        logger.log("Tailscale not installed, installing...")
+        try:
+            subprocess.run(
+                ["pkexec", "sh", "-c", "curl -fsSL https://tailscale.com/install.sh | sh"],
+                check=True, timeout=120
+            )
+            subprocess.run(["pkexec", "tailscale", "set", "--operator=kiosk"], check=True)
+            return True
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Failed to install Tailscale: {e}")
+            return False
 
 def get_current_tailscale_hostname():
     """Get the hostname we're currently advertising."""
@@ -192,6 +209,9 @@ def main():
         return 0
     
     logger.log("Connected to the internet, continuing...")
+
+    # Ensure tailscale is installed
+    ensure_tailscale_installed()
 
     # Sync tailscale hostname with license key
     sync_tailscale_hostname()
