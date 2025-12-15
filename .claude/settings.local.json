@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cat:*)",
+      "Bash(git checkout:*)",
+      "Bash(dpkg:*)",
+      "Bash(chmod:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(./build.sh:*)",
+      "Bash(ls:*)",
+      "Bash(umask)",
+      "Bash(namei:*)"
+    ]
+  }
+}

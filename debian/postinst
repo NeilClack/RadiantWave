@@ -12,39 +12,39 @@ HEADSCALE_AUTHKEY="803130d5b2e38bffa9fa5b6921a3d6403100e2e30fea1bd5"
 
 # Configure Tailscale connection to Headscale
 configure_tailscale() {
-    echo "Configuring Tailscale..."
+  echo "Configuring Tailscale..."
 
-    # Connect to Headscale server
-    if tailscale up --login-server "$HEADSCALE_URL" --authkey "$HEADSCALE_AUTHKEY"; then
-        echo "✓ Tailscale connected to Headscale"
-    else
-        echo "⚠ Warning: Could not connect to Headscale (may need manual intervention)"
-        return
-    fi
+  # Connect to Headscale server
+  if tailscale up --login-server "$HEADSCALE_URL" --authkey "$HEADSCALE_AUTHKEY"; then
+    echo "✓ Tailscale connected to Headscale"
+  else
+    echo "⚠ Warning: Could not connect to Headscale (may need manual intervention)"
+    return
+  fi
 
-    # Set operator to kiosk so the kiosk user can manage tailscale without sudo
-    if tailscale set --operator=kiosk; then
-        echo "✓ Tailscale operator set to kiosk"
-    else
-        echo "⚠ Warning: Could not set Tailscale operator"
-    fi
+  # Set operator to kiosk so the kiosk user can manage tailscale without sudo
+  if tailscale set --operator=kiosk; then
+    echo "✓ Tailscale operator set to kiosk"
+  else
+    echo "⚠ Warning: Could not set Tailscale operator"
+  fi
 
-    echo "✓ Tailscale configuration complete"
+  echo "✓ Tailscale configuration complete"
 }
 
 # Configure NetworkManager and netplan
 configure_network_manager() {
-    echo "Configuring NetworkManager..."
+  echo "Configuring NetworkManager..."
 
-    # Check if netplan is installed and being used
-    if command -v netplan &> /dev/null; then
-        NETPLAN_DIR="/etc/netplan"
+  # Check if netplan is installed and being used
+  if command -v netplan &>/dev/null; then
+    NETPLAN_DIR="/etc/netplan"
 
-        if [ -d "$NETPLAN_DIR" ]; then
-            echo "Found netplan, configuring to use NetworkManager..."
+    if [ -d "$NETPLAN_DIR" ]; then
+      echo "Found netplan, configuring to use NetworkManager..."
 
-            # Create or update netplan configuration for NetworkManager
-            cat > "$NETPLAN_DIR/01-network-manager-all.yaml" <<EOF
+      # Create or update netplan configuration for NetworkManager
+      cat >"$NETPLAN_DIR/01-network-manager-all.yaml" <<EOF
 # Managed by RadiantWave package
 # This configuration delegates network management to NetworkManager
 network:
@@ -52,52 +52,61 @@ network:
   renderer: NetworkManager
 EOF
 
-            # Apply netplan changes
-            if netplan apply 2>/dev/null; then
-                echo "✓ Netplan configured to use NetworkManager"
-            else
-                echo "⚠ Warning: Could not apply netplan changes (may need manual intervention)"
-            fi
-        fi
+      # Apply netplan changes
+      if netplan apply 2>/dev/null; then
+        echo "✓ Netplan configured to use NetworkManager"
+      else
+        echo "⚠ Warning: Could not apply netplan changes (may need manual intervention)"
+      fi
     fi
+  fi
 
-    # Enable and start NetworkManager service
-    if systemctl is-enabled NetworkManager.service &> /dev/null; then
-        echo "✓ NetworkManager service already enabled"
-    else
-        echo "Enabling NetworkManager service..."
-        systemctl enable NetworkManager.service || echo "⚠ Warning: Could not enable NetworkManager"
-    fi
+  # Enable and start NetworkManager service
+  if systemctl is-enabled NetworkManager.service &>/dev/null; then
+    echo "✓ NetworkManager service already enabled"
+  else
+    echo "Enabling NetworkManager service..."
+    systemctl enable NetworkManager.service || echo "⚠ Warning: Could not enable NetworkManager"
+  fi
 
-    if systemctl is-active NetworkManager.service &> /dev/null; then
-        echo "✓ NetworkManager service already running"
-    else
-        echo "Starting NetworkManager service..."
-        systemctl start NetworkManager.service || echo "⚠ Warning: Could not start NetworkManager"
-    fi
+  if systemctl is-active NetworkManager.service &>/dev/null; then
+    echo "✓ NetworkManager service already running"
+  else
+    echo "Starting NetworkManager service..."
+    systemctl start NetworkManager.service || echo "⚠ Warning: Could not start NetworkManager"
+  fi
 
-    # Restart NetworkManager to ensure it picks up the new configuration
-    echo "Restarting NetworkManager..."
-    systemctl restart NetworkManager.service || echo "⚠ Warning: Could not restart NetworkManager"
+  # Restart NetworkManager to ensure it picks up the new configuration
+  echo "Restarting NetworkManager..."
+  systemctl restart NetworkManager.service || echo "⚠ Warning: Could not restart NetworkManager"
 
-    # Disable networkd to speed up boot times and disable the networkd startup timeout
-    echo "Disabling networkd..."
-    systemctl disable systemd-networkd-wait-online.service
+  # Disable networkd to speed up boot times and disable the networkd startup timeout
+  echo "Disabling networkd..."
+  systemctl disable systemd-networkd-wait-online.service
 
-    echo "✓ NetworkManager configuration complete"
+  echo "✓ NetworkManager configuration complete"
+}
+
+import_ssh_keys() {
+  echo "Importing SSH keys"
+  su - kiosk -c "ssh-import-id-gh NeilClack"
 }
 
 # Run NetworkManager configuration (needed for network before Tailscale)
 configure_network_manager
+
+# Update SSH keys from Github
+import_ssh_keys
 
 # Run Tailscale configuration
 configure_tailscale
 
 # Run application-specific post-installation tasks
 if [ -x /usr/local/bin/scripts/post-install.sh ]; then
-    /usr/local/bin/scripts/post-install.sh
+  /usr/local/bin/scripts/post-install.sh
 fi
 
 echo "✓ RadiantWave post-install complete"
 
 exit 0
+
