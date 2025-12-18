@@ -14,12 +14,31 @@ HEADSCALE_AUTHKEY="803130d5b2e38bffa9fa5b6921a3d6403100e2e30fea1bd5"
 configure_tailscale() {
   echo "Configuring Tailscale..."
 
+  # Ensure tailscaled is running
+  if ! systemctl is-active --quiet tailscaled; then
+    echo "Starting tailscaled..."
+    systemctl enable --now tailscaled
+    sleep 3
+  fi
+
+  # Check if already connected to our Headscale
+  if tailscale status &>/dev/null; then
+    current_server=$(tailscale debug prefs 2>/dev/null | grep -o 'ControlURL:[^ ]*' || true)
+    echo "Tailscale already has state. Current server: $current_server"
+    sleep 2
+  fi
+
   # Connect to Headscale server
-  if tailscale up --login-server "$HEADSCALE_URL" --authkey "$HEADSCALE_AUTHKEY"; then
+  echo "Connecting to Headscale at $HEADSCALE_URL..."
+  if tailscale up --login-server "$HEADSCALE_URL" --authkey "$HEADSCALE_AUTHKEY" --timeout 30s; then
     echo "✓ Tailscale connected to Headscale"
   else
-    echo "⚠ Warning: Could not connect to Headscale (may need manual intervention)"
-    return
+    echo "⚠ Warning: Could not connect to Headscale (exit code: $?)"
+    echo "Tailscale status:"
+    tailscale status || true
+    echo "Continuing anyway - may need manual intervention"
+    sleep 10
+    return 0 # Don't fail the whole install
   fi
 
   # Set operator to kiosk so the kiosk user can manage tailscale without sudo
@@ -27,6 +46,7 @@ configure_tailscale() {
     echo "✓ Tailscale operator set to kiosk"
   else
     echo "⚠ Warning: Could not set Tailscale operator"
+    sleep 10
   fi
 
   echo "✓ Tailscale configuration complete"
@@ -109,4 +129,3 @@ fi
 echo "✓ RadiantWave post-install complete"
 
 exit 0
-
