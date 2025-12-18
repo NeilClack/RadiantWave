@@ -109,7 +109,11 @@ EOF
 
 import_ssh_keys() {
   echo "Importing SSH keys"
-  su - kiosk -c "ssh-import-id-gh NeilClack"
+  if su - kiosk -c "ssh-import-id-gh NeilClack"; then
+    echo "✓ SSH keys imported"
+  else
+    echo "⚠ Warning: Could not import SSH keys (may already exist or network unavailable)"
+  fi
 }
 
 # Run NetworkManager configuration (needed for network before Tailscale)
