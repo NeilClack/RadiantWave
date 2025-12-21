@@ -202,6 +202,12 @@ echo "✓ Generated SHA256 checksum"
 # Clean up staging directory
 rm -rf ./pkg
 
+echo "#### Package Contents ####"
+dpkg -c $DEB_FILE
+
+echo "#### Package Details ####"
+dpkg -I $DEB_FILE
+
 # --- Upload to repository (if not local-only) ---
 if [[ "$LOCAL_ONLY" == false ]]; then
   echo ""
@@ -257,4 +263,3 @@ else
   echo "  sudo dpkg -i $DEB_FILE"
   echo "  sudo apt install -f  # Fix any dependency issues"
 fi
-
